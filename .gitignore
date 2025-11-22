@@ -1,5 +1,4 @@
-.venv
-lafvt_output
+# General Python ignore
 *.pyc
 __pycache__/
 .pytest_cache/
@@ -9,7 +8,10 @@ __pycache__/
 venv/
 env/
 *.env
-.function_cache
 
 # Codebases Testing On
 RIOT/
+
+# Repo Specific
+lafvt_output/
+.function_cache
