@@ -1,0 +1,12 @@
+.venv
+lafvt_output
+*.pyc
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.vscode/
+.idea/
+venv/
+env/
+*.env
+.function_cache
