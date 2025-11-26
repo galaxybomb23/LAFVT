@@ -6,6 +6,8 @@ from selector import FunctionSelector
 from checkpointer import FunctionCheckpointer
 from autoup_wrapper import AutoUPWrapper
 from report_merger import ReportMerger
+import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def main():
     # Input arguments
@@ -34,7 +36,7 @@ def main():
     
     # 2. Select functions    
     print("--- Step 2: Selecting target function ---")
-    selector = FunctionSelector()
+    selector = FunctionSelector(algorithm='all')
     selected_funcs = selector.select(functions)
     
     if not selected_funcs:
@@ -53,22 +55,28 @@ def main():
                 print(f"Function '{selected_func['name']}' has not changed since last run. Skipping verification.")
                 selected_funcs.remove(selected_func)
             # For now, just skip AutoUP, but cache only stores hash, so need to keep track of old results.
-    
+            
     # 4. AutoUP
     print("--- Step 4: Running AutoUP ---")
     results = [] # Results for future merger expansion
-    for selected_func in selected_funcs:
-
-            autoup = AutoUPWrapper(autoup_root)
-            success, message = autoup.run(selected_func, output_dir)
-            
-            result = {
-                "name": selected_func['name'],
-                "success": success,
-                "message": message,
-                "artifacts_path": str(output_dir / selected_func['name'])
-            }
+    
+    def run_autoup(selected_func):
+        autoup = AutoUPWrapper(autoup_root)
+        success, message = autoup.run(selected_func, output_dir)
+        
+        return {
+            "name": selected_func['name'],
+            "success": success,
+            "message": message,
+            "artifacts_path": str(output_dir / selected_func['name'])
+        }
+    
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(run_autoup, func): func for func in selected_funcs}
+        for future in as_completed(futures):
+            result = future.result()
             results.append(result)
+            print(f"Completed: {result['name']}")
         
     # 5. Merge Reports
     print("--- Step 5: Merging reports ---")
