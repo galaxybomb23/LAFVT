@@ -60,23 +60,18 @@ def main():
     print("--- Step 4: Running AutoUP ---")
     results = [] # Results for future merger expansion
     
-    def run_autoup(selected_func):
+    for selected_func in selected_funcs:
         autoup = AutoUPWrapper(autoup_root)
         success, message = autoup.run(selected_func, output_dir)
         
-        return {
+        result = {
             "name": selected_func['name'],
             "success": success,
             "message": message,
             "artifacts_path": str(output_dir / selected_func['name'])
         }
-    
-    with ThreadPoolExecutor() as executor:
-        futures = {executor.submit(run_autoup, func): func for func in selected_funcs}
-        for future in as_completed(futures):
-            result = future.result()
-            results.append(result)
-            print(f"Completed: {result['name']}")
+        results.append(result)
+        print(f"Completed: {result['name']}")
         
     # 5. Merge Reports
     print("--- Step 5: Merging reports ---")
