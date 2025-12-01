@@ -1,0 +1,45 @@
+* To run
+#+BEGIN_SRC Bash
+pip install clang
+pip install libclang
+# For Ubuntu/Debian
+sudo apt update && install llvm clang libclang-dev
+#+END_SRC
+- If analyzer.py can't find find libclang.so, locate your libclang.so and update file:
+  #+BEGIN_SRC Bash
+  locate libclang.so
+  #+END_SRC
+* Output
+- Each row represents one function's metrics
+- Each column corresponds to a specific complexity of vulnerability metric
+* Metrics explanation
+** Complexity metrics
+*** C1: Cyclomatic complexity
+- Number of linearly independent paths through a function
+*** Loop structure metrics
+- C2: Number of loops
+- C3: Number of nested loops
+- C4: Maximum nesting level
+*** Binning strategy
+- Computer complexity score by adding all complexity metric values, group functions with same score into the same bin
+** Vulnerability metrics
+*** Dependencies
+- Dependency relationship of a function with other functions
+- V1: Number of parameter variables
+- V2: Number of variables prepared by the function as parameters of function calls
+*** Pointer metrics
+- Captures manipulation of pointers
+- # of pointer arithmetic metrics can be obtained from the AST
+- V3: # of pointer arithmetic operations
+- V4: # of unique variables used in pointer arithmetic
+- V5: Max pointer arithmetic a variable is involved in
+*** Control structures
+- V6: # of nested control structures
+- V7: Max nesting level of control structures
+- V8: Maximum of control structures that are control-dependent
+- V9: Maximum of data-dependent control structures
+- V10: # of if statements without explicit else statement
+- V11: # of variables involved in control predicates
+* Relevant papers:
+- [[https://arxiv.org/abs/1901.11479][LEOPARD: Identifying Vulnerable Code for Vulnerability Assessment through Program Metrics]]
+- [[https://sites.google.com/site/leopardsite2017/home][LEOPARD detailed metrics]]
