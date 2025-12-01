@@ -8,6 +8,7 @@ from autoup_wrapper import AutoUPWrapper
 from report_merger import ReportMerger
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import dotenv
 
 def main():
     # Input arguments
@@ -16,7 +17,13 @@ def main():
     parser.add_argument("--output_dir", default="lafvt_output",help="Directory to store results and reports")
     parser.add_argument("--autoup_root", default="./AutoUP", help="Path to AutoUP root directory")
     parser.add_argument("--no-cache", default=False, action="store_true", help="Do not use cache")
+    parser.add_argument("--OPENAI_API_KEY", default=dotenv.get_key(".env", "OPENAI_API_KEY"), help="OpenAI API Key for AutoUP usage")
     args = parser.parse_args()
+
+    # if no OPENAI_API_KEY provided, exit
+    if not args.OPENAI_API_KEY:
+        print("Error: No OpenAI API Key provided. Set it via --OPENAI_API_KEY or in .env file.")
+        sys.exit(1)
     
     target_dir = Path(args.target_directory).resolve()
     output_dir = Path(args.output_dir).resolve()
