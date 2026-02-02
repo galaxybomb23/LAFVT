@@ -5,11 +5,48 @@ import json
 from pathlib import Path
 import shlex
 
-from clang import cindex
+import clang.cindex as cindex
 from clang.cindex import CursorKind, TypeKind
 
 # adjust this if your libclang.so file is elsewhere
-cindex.Config.set_library_file("/usr/lib/llvm-20/lib/libclang.so")
+#cindex.Config.set_library_file("/usr/lib/llvm-20/lib/libclang.so")
+
+import sys
+import os
+
+def configure_libclang():
+    # Allow explicit override (nice for CI)
+    if "LIBCLANG_FILE" in os.environ:
+        cindex.Config.set_library_file(os.environ["LIBCLANG_FILE"])
+        return
+
+    # Look for the bundled library inside site-packages/clang/native/
+    clang_pkg_dir = Path(cindex.__file__).resolve().parent  # .../site-packages/clang
+    native_dir = clang_pkg_dir / "native"
+    if native_dir.is_dir():
+        if sys.platform.startswith("linux"):
+            candidates = ["libclang.so", "libclang.so.1"]
+            # also accept versioned .so files (common in wheels)
+            candidates += sorted([p.name for p in native_dir.glob("libclang.so*")])
+        elif sys.platform == "darwin":
+            candidates = ["libclang.dylib"]
+            candidates += sorted([p.name for p in native_dir.glob("libclang*.dylib")])
+        else:  # windows
+            candidates = ["libclang.dll"]
+            candidates += sorted([p.name for p in native_dir.glob("libclang*.dll")])
+
+        for name in candidates:
+            p = native_dir / name
+            if p.exists():
+                cindex.Config.set_library_file(str(p))
+                return
+
+    # If we get here, we didn't find it
+    raise RuntimeError(
+        f"Could not find bundled libclang in {native_dir}. "
+        "Install via `pip install libclang` (bundled) or set LIBCLANG_FILE."
+    )
+
 
 ROOT = Path(__file__).resolve().parent
 # compile_commands.json contains all the build flags needed to compile each file
@@ -410,6 +447,8 @@ def analyze_function(func_cursor, tu_path: str) -> FunctionMetrics:
 # ---------------------------------------------------------------------------
 
 def main():
+
+    configure_libclang()
     parser = argparse.ArgumentParser(
         description="Analyze C/C++ functions in a directory using LEOPARD-style metrics."
     )
@@ -439,6 +478,7 @@ def main():
 
     seen_funcs = set()  # to avoid duplicates: (file, line, name)
     all_metrics: List[FunctionMetrics] = []
+    num_functions = 0
 
     for entry in ccdb:
         # figure out source + args
@@ -492,6 +532,7 @@ def main():
             f"{fm.V6},{fm.V7},{fm.V8},{fm.V9},{fm.V10},{fm.V11},"
             f"{fm.complexity_score()},{fm.vulnerability_score()}"
         )
+    print(f"len(all_metrics){len(all_metrics)}")
 
 
 if __name__ == "__main__":
