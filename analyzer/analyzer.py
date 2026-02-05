@@ -49,10 +49,6 @@ def configure_libclang():
 
 
 ROOT = Path(__file__).resolve().parent
-# compile_commands.json contains all the build flags needed to compile each file
-# (such as include paths for any given file)
-CCDB_PATH = ROOT / "compile_commands.json"
-
 @dataclass
 class FunctionMetrics:
     tu_path: str
@@ -108,8 +104,8 @@ class AnalysisState:
 
 # ======= Helpers to load compile_commands.json =======
 
-def load_compile_commands():
-    with CCDB_PATH.open() as f:
+def load_compile_commands(ccdb_path: Path):
+    with ccdb_path.open() as f:
         return json.load(f)
 
 def clean_args(raw_args):
@@ -158,6 +154,15 @@ def clean_args(raw_args):
         # Everything else (warnings, optimizations, debug, etc.) is dropped
 
     return cleaned
+
+def infer_target_from_args(raw_args):
+    if not raw_args:
+        return None
+    compiler = Path(raw_args[0]).name
+    for suffix in ("-gcc", "-g++", "-clang", "-clang++"):
+        if compiler.endswith(suffix):
+            return compiler[: -len(suffix)]
+    return None
 
 def is_in_dir(path: Path, base: Path) -> bool:
     try:
@@ -450,12 +455,19 @@ def main():
 
     configure_libclang()
     parser = argparse.ArgumentParser(
-        description="Analyze C/C++ functions in a directory using LEOPARD-style metrics."
+        description="Analyze C/C++ functions defined in a CCDB(compile_commands.json) using LEOPARD-style metrics."
     )
     parser.add_argument(
         "target_dir",
-        help="Directory containing C/C++ files to analyze "
-             "(relative to the repo root or an absolute path).",
+        help="Directory containing the compile_commands.json file",
+    )
+    parser.add_argument(
+        "--target",
+        help="Clang target triple (e.g., arm-none-eabi).",
+    )
+    parser.add_argument(
+        "--sysroot",
+        help="Sysroot path for the target toolchain.",
     )
     args = parser.parse_args()
 
@@ -473,20 +485,24 @@ def main():
     print("ROOT:", ROOT)
     print("TARGET_DIR:", target_dir)
 
-    ccdb = load_compile_commands()
+    ccdb_path = target_dir / "compile_commands.json"
+    if not ccdb_path.is_file():
+        print(f"ERROR: compile_commands.json not found: {ccdb_path}")
+        return
+
+    ccdb = load_compile_commands(ccdb_path)
     index = cindex.Index.create()
 
     seen_funcs = set()  # to avoid duplicates: (file, line, name)
     all_metrics: List[FunctionMetrics] = []
     num_functions = 0
+    failed_tu_diags_shown = 0
+    max_failed_tu_diags = 5
+    max_diags_per_tu = 5
 
     for entry in ccdb:
         # figure out source + args
         src = Path(entry["file"]).resolve()
-
-        # Only parse TUs whose source files are under the target directory
-        if not is_in_dir(src, target_dir):
-            continue
 
         if "arguments" in entry:
             raw_args = entry["arguments"]
@@ -494,12 +510,31 @@ def main():
             raw_args = shlex.split(entry["command"])
 
         args_for_tu = clean_args(raw_args)
+        inferred_target = infer_target_from_args(raw_args)
+        target = args.target or inferred_target
+        if target:
+            args_for_tu += ["-target", target]
+        if args.sysroot:
+            args_for_tu += ["--sysroot", args.sysroot]
 
         # Parse TU
         try:
             tu = index.parse(str(src), args=args_for_tu)
         except cindex.TranslationUnitLoadError:
             print(f"WARNING: failed to parse TU for {src}")
+            if failed_tu_diags_shown < max_failed_tu_diags:
+                try:
+                    tu = index.parse(
+                        str(src),
+                        args=args_for_tu,
+                        options=cindex.TranslationUnit.PARSE_INCOMPLETE,
+                    )
+                    print(f"Diagnostics for {src}:")
+                    for d in list(tu.diagnostics)[:max_diags_per_tu]:
+                        print(f"  {d.severity}: {d.spelling}")
+                    failed_tu_diags_shown += 1
+                except cindex.TranslationUnitLoadError:
+                    pass
             continue
 
         # Walk all function definitions in this TU
@@ -509,10 +544,6 @@ def main():
                 if not loc.file:
                     continue
                 fpath = Path(loc.file.name).resolve()
-
-                # Only consider functions whose file is under target_dir
-                if not is_in_dir(fpath, target_dir):
-                    continue
 
                 key = (str(fpath), loc.line, cur.spelling)
                 if key in seen_funcs:
@@ -537,4 +568,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
