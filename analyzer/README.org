@@ -1,14 +1,33 @@
 * To run
-#+BEGIN_SRC Bash
-pip install clang
-pip install libclang
-# For Ubuntu/Debian
-sudo apt update && install llvm clang libclang-dev
-#+END_SRC
-- If analyzer.py can't find find libclang.so, locate your libclang.so and update file:
-  #+BEGIN_SRC Bash
-  locate libclang.so
-  #+END_SRC
+- analyzer.py needs a compile_commands.json file which can be generated with gen_cc.py
+- Example usage shown below
+** gen_cc.py:
+usage: gen_cc.py [-h] --riotbase RIOTBASE --board BOARD [-j JOBS] [--clean] [--bear BEAR] app_dir
+
+Generate compile_commands.json for a RIOT app directory using bear.
+
+positional arguments:
+  app_dir              Path to RIOT app directory
+
+options:
+  -h, --help           show this help message and exit
+  --riotbase RIOTBASE  Path to RIOT base directory
+  --board BOARD        RIOT board (e.g., native)
+  -j, --jobs JOBS      Parallel jobs for make
+  --clean              Run make clean before building
+  --bear BEAR          Path to bear binary (or name on PATH)
+** analyzer.py:
+usage: analyzer.py [-h] [--target TARGET] [--sysroot SYSROOT] target_dir
+
+Analyze C/C++ functions defined in a CCDB(compile_commands.json) using LEOPARD-style metrics.
+
+positional arguments:
+  target_dir         Directory containing the compile_commands.json file
+
+options:
+  -h, --help         show this help message and exit
+  --target TARGET    Clang target ABI (e.g., arm-none-eabi).
+  --sysroot SYSROOT  Sysroot path for the target toolchain.
 * Output
 - Each row represents one function's metrics
 - Each column corresponds to a specific complexity of vulnerability metric
