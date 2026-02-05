@@ -49,6 +49,7 @@ def configure_libclang():
 
 
 ROOT = Path(__file__).resolve().parent
+CWD = Path.cwd().resolve()
 @dataclass
 class FunctionMetrics:
     tu_path: str
@@ -389,7 +390,7 @@ def analyze_function(func_cursor, tu_path: str) -> FunctionMetrics:
     Analyze a single function definition cursor and compute LEOPARD-style metrics.
     """
     loc = func_cursor.location
-    file_path = Path(loc.file.name).resolve() if loc.file else ROOT
+    file_path = Path(loc.file.name).resolve() if loc.file else CWD
     fm = FunctionMetrics(
         tu_path=tu_path,
         file_path=str(file_path),
@@ -463,7 +464,7 @@ def main():
     )
     parser.add_argument(
         "--target",
-        help="Clang target triple (e.g., arm-none-eabi).",
+        help="Clang target ABI (e.g., arm-none-eabi).",
     )
     parser.add_argument(
         "--sysroot",
@@ -471,10 +472,10 @@ def main():
     )
     args = parser.parse_args()
 
-    # Resolve target directory relative to ROOT if not absolute
+    # Resolve target directory relative to CWD if not absolute
     target_dir = Path(args.target_dir)
     if not target_dir.is_absolute():
-        target_dir = (ROOT / target_dir).resolve()
+        target_dir = (CWD / target_dir).resolve()
     else:
         target_dir = target_dir.resolve()
 
@@ -482,8 +483,8 @@ def main():
         print(f"ERROR: target directory does not exist: {target_dir}")
         return
 
-    print("ROOT:", ROOT)
-    print("TARGET_DIR:", target_dir)
+    # print("ROOT:", ROOT)
+    # print("TARGET_DIR:", target_dir)
 
     ccdb_path = target_dir / "compile_commands.json"
     if not ccdb_path.is_file():
