@@ -1,6 +1,10 @@
-* To run
+* LEOPARD analyzer
+- Takes in a compile_commands.json file(generated from gen_cc.py), and collects vulnerability and complexity metrics on all functions defined in the compile_commands.json
+- The metrics are based on the [[https://arxiv.org/abs/1901.11479][LEOPARD: Identifying Vulnerable Code for Vulnerability Assessment through Program Metrics]] paper
+* How to run
+** System requirements
+- Requires [[https://github.com/rizsotto/Bear][Build EAR]] in order to generate compilation database
 - analyzer.py needs a compile_commands.json file which can be generated with gen_cc.py
-- Example usage shown below
 ** gen_cc.py:
 usage: gen_cc.py [-h] --riotbase RIOTBASE --board BOARD [-j JOBS] [--clean] [--bear BEAR] app_dir
 
@@ -28,6 +32,12 @@ options:
   -h, --help         show this help message and exit
   --target TARGET    Clang target ABI (e.g., arm-none-eabi).
   --sysroot SYSROOT  Sysroot path for the target toolchain.
+** Example usage:
+#+BEGIN_SRC Bash
+python3 gen_cc.py --riotbase ~/Documents/CBMC/analyzer/RIOT/ --board b-l072z-lrwan1 ~/Documents/CBMC/analyzer/RIOT/examples/networking/gnrc/lorawan/
+# target_dir for analyzer.py should contain compile_commands.json
+python3 analyzer.py ~/Documents/RIOT/examples/networking/gnrc/lorawan/ --sysroot /usr/lib/arm-none-eabi
+#+END_SRC
 * Output
 - Each row represents one function's metrics
 - Each column corresponds to a specific complexity of vulnerability metric
