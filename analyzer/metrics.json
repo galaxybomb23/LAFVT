@@ -1,0 +1,10 @@
+[
+  {
+    "function": "gcoap_dns_server_proxy_get",
+    "branch": "gcoap_dns_server_proxy_get",
+    "cve_id": "CVE-2024-32017",
+    "complexity_score": 2,
+    "vulnerability_score": 10,
+    "rank_in_bin": "44/130"
+  }
+]
