@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Generate an HTML report from RIOT violation assessment JSON."""
+"""
+Generate an HTML report from violation assessment JSON.
+
+Usage:
+python assessment_report_generator.py --assessment /path/to/violation_assessments.json 
+                                      --report_name output.html
+"""
 
 from __future__ import annotations
 
