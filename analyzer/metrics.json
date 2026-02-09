@@ -4,7 +4,15 @@
     "branch": "gcoap_dns_server_proxy_get",
     "cve_id": "CVE-2024-32017",
     "complexity_score": 2,
-    "vulnerability_score": 10,
-    "rank_in_bin": "44/130"
+    "vulnerability_score": 11,
+    "rank_in_bin": "35/130"
+  },
+  {
+    "function": "_parse_advertise",
+    "branch": "dhcp_parse_advertise",
+    "cve_id": "CVE-2024-52802",
+    "complexity_score": 52,
+    "vulnerability_score": 30,
+    "rank_in_bin": "1/2"
   }
 ]

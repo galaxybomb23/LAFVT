@@ -59,7 +59,6 @@ def main():
         r["vulnerability_score"] = int(r["vulnerability_score"])
 
     scores = [r["complexity_score"] for r in rows]
-    bin_per_score = args.bin_per_score and not args.equal_width
     edges = compute_bins(scores)
 
     # Assign bins
