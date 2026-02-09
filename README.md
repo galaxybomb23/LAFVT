@@ -35,3 +35,24 @@ NOTE: The output_dir is the directory where the results will be stored. By defau
 
 Optional Arguments:
 `--no-cache`: Disable Cache Checkpointing
+
+## Run Metrics Script
+This script leverages the log files produced by LAFVT and AutoUP to calculate metrics for the LAFVT Toolchain.
+
+### Usage
+```bash
+python metrics_calculator.py "Absolute file path to AutoUP output directory that holds the log files and harnesses for a codebase"
+```
+
+Example:
+```bash
+python metrics_calculator.py "C:\Users\gaura\Desktop\LAFVT\LAFVT\AutoUp-output\output-2026-01-24_16-32-18-RIOT"
+```
+
+### Output
+Currently implements the "Time taken to generate harness in seconds" and "Harness generation cost in tokens" metrics.
+
+The output will be present in a directory named "LAFVT_metrics" (within the input directory), which should contain a second directory named "reports" (function-level metrics) and a "codebase_summary.json" file.
+
+- Metrics for harness generation using AutoUP on a per-function basis
+- Codebase level summary
