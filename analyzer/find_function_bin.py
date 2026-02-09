@@ -93,6 +93,8 @@ def main():
             f"vulnerability={m['vulnerability_score']} "
             f"bin={idx} range={lo}-{hi} rank_in_bin={rank}/{len(b_sorted)}"
         )
+        bin_scores = ",".join(str(r["vulnerability_score"]) for r in b_sorted)
+        print(f"bin_vulnerability_scores={bin_scores}")
 
 
 if __name__ == "__main__":

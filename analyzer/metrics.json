@@ -14,5 +14,21 @@
     "complexity_score": 52,
     "vulnerability_score": 30,
     "rank_in_bin": "1/2"
+  },
+  {
+    "function": "_gcoap_forward_proxy_copy_options",
+    "branch": "gcoap_forward_proxy_copy_options",
+    "cve_id": "CVE-2024-32017B",
+    "complexity_score": 12,
+    "vulnerability_score": 23,
+    "rank_in_bin": "2/10"
+  },
+  {
+    "function": "_on_rd_init",
+    "branch": "_on_rd_init",
+    "cve_id": "CVE-2024-31225",
+    "complexity_score": 17,
+    "vulnerability_score": 11,
+    "rank_in_bin": "9/9"
   }
 ]
