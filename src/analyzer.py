@@ -2,6 +2,7 @@ import lizard
 import pandas as pd
 import os
 import logging
+import argparse
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import clang.cindex
@@ -326,3 +327,92 @@ class Analyzer:
             logger.info("Analysis report saved to: %s", output_path)
         else:
             logger.warning("No analysis data to save")
+
+
+def main():
+    """Main entry point for running analyzer as a standalone script."""
+    parser = argparse.ArgumentParser(
+        description="Analyze C/C++ code for vulnerability risk and generate CSV report"
+    )
+    parser.add_argument(
+        "directory",
+        type=str,
+        help="Root directory containing C/C++ source files to analyze"
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="analysis_report.csv",
+        help="Output CSV file path (default: analysis_report.csv)"
+    )
+    parser.add_argument(
+        "--algorithm",
+        type=str,
+        choices=['longest', 'shortest', 'first', 'last', 'all', 'top_risk'],
+        default='top_risk',
+        help="Function selection algorithm (default: top_risk)"
+    )
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=10,
+        help="Number of top functions to display for top_risk algorithm (default: 10)"
+    )
+    
+    args = parser.parse_args()
+    
+    root_dir = Path(args.directory)
+    if not root_dir.exists():
+        logger.error("Directory does not exist: %s", root_dir)
+        return 1
+    
+    if not root_dir.is_dir():
+        logger.error("Path is not a directory: %s", root_dir)
+        return 1
+    
+    logger.info("=" * 60)
+    logger.info("Starting vulnerability analysis")
+    logger.info("Directory: %s", root_dir)
+    logger.info("Algorithm: %s", args.algorithm)
+    logger.info("=" * 60)
+    
+    # Initialize analyzer
+    analyzer = Analyzer(selection_algorithm=args.algorithm)
+    
+    # Run analysis
+    functions = analyzer.analyze_and_extract(root_dir)
+    
+    if not functions:
+        logger.error("No functions found or analysis failed")
+        return 1
+    
+    logger.info("Successfully analyzed %d functions", len(functions))
+    
+    # Save full analysis report
+    output_path = Path(args.output)
+    analyzer.save_analysis_report(output_path)
+    
+    # Display selected functions summary
+    selected = analyzer.select(functions, N=args.top_n)
+    if selected:
+        logger.info("=" * 60)
+        logger.info("Selected Functions (%s algorithm):", args.algorithm)
+        logger.info("=" * 60)
+        for i, func in enumerate(selected, 1):
+            logger.info(
+                "%d. %s (file: %s, lines: %d-%d, leopard_score: %.2f)",
+                i,
+                func.get('name', 'unknown'),
+                func.get('file', 'unknown'),
+                func.get('start_line', 0),
+                func.get('end_line', 0),
+                func.get('leopard_score', 0.0)
+            )
+        logger.info("=" * 60)
+    
+    logger.info("Analysis complete! Report saved to: %s", output_path.absolute())
+    return 0
+
+
+if __name__ == "__main__":
+    exit(main())
