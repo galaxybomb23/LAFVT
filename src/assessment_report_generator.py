@@ -492,13 +492,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate violation assessment HTML report")
     parser.add_argument("--assessment", required=True, help="Path to violation_assessment.json")
     parser.add_argument("--report_name", default="output.html", help="Output HTML filename")
+    parser.add_argument("--output_dir", help="Optional output directory for the HTML report")
     args = parser.parse_args()
 
     assessment_dir = Path(args.assessment)
     report_name = args.report_name
     if not report_name.lower().endswith(".html"):
         report_name = f"{report_name}.html"
-    output_path = Path(report_name)
+    
+    if args.output_dir:
+        output_path = Path(args.output_dir) / report_name
+    else:
+        output_path = Path(report_name)
     var = ViolationAssessmentReport(assessment_dir, output_path)
     out_path = var.generate()
     print("Generated! ", out_path)

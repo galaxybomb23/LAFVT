@@ -11,6 +11,7 @@ env/
 
 # Codebases Testing On
 RIOT/
+output/
 
 # Repo Specific
 lafvt_output/
