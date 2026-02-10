@@ -4,8 +4,7 @@ from pathlib import Path
 import dotenv
 
 # Import internal modules
-from extractor import FunctionExtractor
-from selector import FunctionSelector
+from analyzer import Analyzer
 from checkpointer import FunctionCheckpointer
 from autoup_wrapper import AutoUPWrapper
 from report_merger import ReportMerger
@@ -43,27 +42,31 @@ def main():
         
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # === 1. Extract functions ===
+    # === 1. Extract and Analyze functions ===
 
-    print("--- Step 1: Extracting functions ---")
-    extractor = FunctionExtractor()
-    functions = extractor.extract(target_dir)
+    print("--- Step 1: Extracting and analyzing functions ---")
+    analyzer = Analyzer(selection_algorithm='top_risk')
+    functions = analyzer.analyze_and_extract(target_dir)
+    if functions is None:
+        print("No functions found. Exiting.")
+        return (0)
     print(f"Found {len(functions)} functions.")
     
     timings['extraction_time'] = time.time() - prev_time
     prev_time = time.time()
     
     # === 2. Select functions ===
-    print("--- Step 2: Selecting target function ---")
-    selector = FunctionSelector(algorithm='all')
-    selected_funcs = selector.select(functions)
-    if not selected_funcs:
-        print("No functions found to select.")
+    print("--- Step 2: Selecting target functions ---")
+    selected_funcs = analyzer.select(functions, N=5)  # Select top 5 high-risk functions
+    if selected_funcs is None:
+        print("No functions selected. Exiting.")
         return (0)
     print(f"Selected functions ({len(selected_funcs)}): {', '.join([func['name'] for func in selected_funcs])}")
 
     timings['selection_time'] = time.time() - prev_time
     prev_time = time.time()
+
+    print(f"Sample selected function:\n{selected_funcs[0]}")
 
     # === 3. Check Cache ===
     print("--- Step 3: Checking cache ---")
@@ -120,9 +123,9 @@ def main():
     ps = "\n--- Timing Analytics ---\n"
     
     # Function Extraction Time
-    ps += f"==> Function Extraction Time:\n"
+    ps += f"==> Function Extraction and Analysis Time:\n"
     ps += f"\t Total Time: {timings['extraction_time']:.2f} seconds.\n"
-    ps += f"\t Extracted {len(functions)} functions.\n"
+    ps += f"\t Extracted and analyzed {len(functions)} functions.\n"
     ps += f"\t Average time per function: {timings['extraction_time'] / len(functions):.2f} seconds.\n"
     
     # Function Selection Time
