@@ -30,5 +30,81 @@
     "complexity_score": 17,
     "vulnerability_score": 11,
     "rank_in_bin": "9/9"
+  },
+  {
+    "function": "_rbuf_add",
+    "branch": "CVE-2023-33975-paschal",
+    "cve_id": [
+      "CVE-2023-33975",
+      "CVE-2023-24821"
+    ],
+    "complexity_score": 93,
+    "vulnerability_score": 42,
+    "rank_in_bin": "1/1"
+  },
+  {
+    "function": "_iphc_ipv6_encode",
+    "branch": "_iphc_ipv6_encode",
+    "cve_id": "CVE-2023-33973",
+    "complexity_score": 60,
+    "vulnerability_score": 38,
+    "rank_in_bin": "1/1"
+  },
+  {
+    "function": "gnrc_sixlowpan_frag_sfr_send",
+    "branch": "gnrc_sixlowpan_frag_sfr_send",
+    "cve_id": "CVE-2023-24826",
+    "complexity_score": 40,
+    "vulnerability_score": 37,
+    "rank_in_bin": "1/1"
+  },
+  {
+    "function": "gnrc_rpl_srh_process",
+    "branch": "gnrc_rpl_srh_process",
+    "cve_id": "CVE-2023-24817",
+    "complexity_score": 33,
+    "vulnerability_score": 33,
+    "rank_in_bin": "1/2"
+  },
+  {
+    "function": "_iphc_encode",
+    "branch": [
+      "CVE-2023-24823",
+      "CVE-2023-24822"
+    ],
+    "cve_id": [
+      "CVE-2023-24823",
+      "CVE-2023-24822"
+    ],
+    "complexity_score": 38,
+    "vulnerability_score": 23,
+    "rank_in_bin": "1/2"
+  },
+  {
+    "function": "_rbuf_add",
+    "branch": "CVE-2023-33975-paschal",
+    "cve_id": "CVE-2023-24825",
+    "complexity_score": 93,
+    "vulnerability_score": 42,
+    "rank_in_bin": "1/1"
+  },
+  {
+    "function": "gnrc_sixlowpan_iphc_recv",
+    "branch": "gnrc_sixlowpan_iphc_recv",
+    "cve_id": [
+      "CVE-2023-24820",
+      "CVE-2023-24819"
+    ],
+    "complexity_score": 104,
+    "vulnerability_score": 34,
+    "rank_in_bin": "1/1"
+  },
+  {
+    "function": "dns_msg_parse_reply",
+    "branch": "dns_msg_parse_reply",
+    "cve_id": "CVE-2021-31664",
+    "complexity_score": 49,
+    "vulnerability_score": 27,
+    "rank_in_bin": "1/1"
   }
 ]
