@@ -83,7 +83,6 @@ class AutoUPWrapper:
             result = subprocess.run(
                 cmd, 
                 cwd=self.autoup_root,
-                capture_output=True,
                 text=True
             )
             
