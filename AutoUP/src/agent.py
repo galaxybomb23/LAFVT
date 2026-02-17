@@ -39,10 +39,10 @@ class AIAgent(ABC):
         try:
             result = get_llm_provider(args.llm_model)
             if result[1] == "openai":
-                logger.info(f"Using model '{args.llm_model}' with OpenAI specification")
+                logger.info(f"[{self.agent_name}] Using model '{args.llm_model}' with OpenAI specification")
                 self.llm = GPT(name=args.llm_model, max_input_tokens=270000)
             else:
-                logger.info(f"Using model '{args.llm_model}' with Litellm wrapper.")
+                logger.info(f"[{self.agent_name}] Using model '{args.llm_model}' with Litellm wrapper.")
                 self.llm = LiteLLM(name=args.llm_model, max_input_tokens=270000)
         except Exception as e:
             logger.error(f"Error. Model '{args.llm_model}' not supported: {e}")

@@ -2,12 +2,14 @@
 import argparse
 from pathlib import Path
 import dotenv
+import os
 
 # Import internal modules
 from analyzer import Analyzer
 from checkpointer import FunctionCheckpointer
 from autoup_wrapper import AutoUPWrapper
 from report_merger import ReportMerger
+from assessment_report_generator import ViolationAssessmentReport
 
 # for analysis
 import time
@@ -21,7 +23,7 @@ def main():
     # Input arguments
     parser = argparse.ArgumentParser(description="LAFVT: Lightweight Automated Function Verification Toolchain")
     parser.add_argument("--target_directory", help="Directory to scan for C/C++ functions")
-    parser.add_argument("--output_dir", default="lafvt_output",help="Directory to store results and reports")
+    parser.add_argument("--root_dir", default=os.getcwd(), help="Root directory of the project (default: current working directory)")
     parser.add_argument("--autoup_root", default="./AutoUP", help="Path to AutoUP root directory")
     parser.add_argument("--no-cache", default=False, action="store_true", help="Do not use cache")
     parser.add_argument("--OPENAI_API_KEY", default=dotenv.get_key(".env", "OPENAI_API_KEY"), help="OpenAI API Key for AutoUP usage")
@@ -29,16 +31,21 @@ def main():
 
     # if no OPENAI_API_KEY provided, exit
     if not args.OPENAI_API_KEY:
-        print("Error: No OpenAI API Key provided. Set it via --OPENAI_API_KEY or in .env file.")
-        return (1)
+        # try to pull from bash env
+        args.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        if not args.OPENAI_API_KEY:
+            print("Error: No OpenAI API Key provided. Set it via --OPENAI_API_KEY or in .env file.")
+            return (1)
     
     if not args.target_directory:
         print("Error: No target directory provided. Use --target_directory to specify the directory to analyze.")
         return (1)
     
-    
+    #output dir is subdirectory of target dir if not provided
+  
     target_dir = Path(args.target_directory).resolve()
-    output_dir = Path(args.output_dir).resolve()
+    root_dir = Path(args.root_dir).resolve()
+    output_dir = root_dir / "lafvt_output"
     autoup_root = Path(args.autoup_root).resolve()
     
     if not target_dir.exists():
@@ -88,42 +95,43 @@ def main():
             
     # === 4. AutoUP ===
     print("--- Step 4: Running AutoUP ---")
+    print(f"Output directory for AutoUP results: {output_dir}")
     results = [] # Results for future merger expansion
     autoup = AutoUPWrapper(autoup_root)
     
-    for selected_func in uncached_funcs:
-        start_time = time.time()
-        success, message = autoup.run(selected_func, output_dir)
+    # for selected_func in uncached_funcs:
+    #     start_time = time.time()
+    #     success, message = autoup.run(selected_func, output_dir)
         
-        result = {
-            "name": selected_func['name'],
-            "success": success,
-            "message": message,
-            "artifacts_path": str(output_dir / selected_func['name']),
-            "runtime": time.time() - start_time
-        }
-        results.append(result)
-        print(f"Completed: {result['name']}")
+    #     result = {
+    #         "name": selected_func['name'],
+    #         "success": success,
+    #         "message": message,
+    #         "artifacts_path": str(output_dir / selected_func['name']),
+    #         "runtime": time.time() - start_time
+    #     }
+    #     results.append(result)
+    #     print(f"Completed: {result['name']}")
 
     timings['autoup_time'] = time.time() - prev_time
     prev_time = time.time()
 
-    # === 5. Merge Reports ===
-    print("--- Step 5: Merging reports ---")
-    merger = ReportMerger()
-    merger.merge(output_dir)
-
-    timings['report_merging_time'] = time.time() - prev_time
-    prev_time = time.time()
         
     # 6. Review
     print("--- Step 6: Validating results ---")
-    success, message = autoup.review(output_dir, target_dir)
+    success, message = autoup.review(output_dir, project_root=root_dir)
     if not success:
         print(f"AutoUP review failed: {message}")
         return (1)
     
     timings['validation_time'] = time.time() - prev_time
+    prev_time = time.time()
+
+    print("--- Step 7: Merging reports ---")
+    merger = ViolationAssessmentReport(output_dir / "violation_assessments.json",output_dir / "final_report.html")
+    output = merger.generate()
+    print(f"Violation assessment report generated at: {output}")
+    timings['report_merging_time'] = time.time() - prev_time
     
     print("--- LAFVT Execution Complete ---")
 

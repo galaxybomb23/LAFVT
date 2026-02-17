@@ -16,15 +16,16 @@ class AutoUPWrapper:
         """
         func_name = function_data['name']
         file_path = Path(function_data['file'])
+        file_name = file_path.stem
         
         # Assuming its cwd as user should execute from root (maybe add a flag later)
         project_root = os.getcwd() 
         
-        harness_path = output_dir / func_name
+        harness_path = output_dir / file_name / func_name
         harness_path.mkdir(parents=True, exist_ok=True)
         
-        log_file =output_dir / func_name / "autoup_log.txt"
-        metrics_file =output_dir / func_name / "autoup_metrics.jsonl"
+        log_file =output_dir / file_name / func_name / "autoup_log.log"
+        metrics_file =output_dir / file_name /func_name / "autoup_metrics.jsonl"
         
         # Construct command
         # python src/run.py all ...
@@ -65,13 +66,16 @@ class AutoUPWrapper:
         """
         Run AutoUP in review mode on the specified output directory.
         """
-        log_file = output_dir / "review_log.txt"
+        log_file = output_dir / "review_log.log"
         cmd = [
             str(sys.executable), str(self.run_script),
             "review",
             "--harness_path", str(output_dir),
             "--log_file", str(log_file),
-            "--project_root", str(project_root)
+            "--target_function_name", "none",  # Not needed for review, but run.py requires it
+            "--root_dir", str(project_root),
+            "--target_file_path", "none",  # Not needed for review, but run
+            "--metrics_file", str(output_dir / "review_metrics.jsonl")  # Not needed for review, but run.py requires it
         ]
         print(f"Running command: {' '.join(cmd)}")
         
