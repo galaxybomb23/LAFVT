@@ -60,3 +60,33 @@ class AutoUPWrapper:
                 
         except Exception as e:
             return False, f"AutoUP execution error: {e}"
+    
+    def review(self, output_dir: Path, project_root: Path) -> Tuple[bool, str]:
+        """
+        Run AutoUP in review mode on the specified output directory.
+        """
+        log_file = output_dir / "review_log.txt"
+        cmd = [
+            str(sys.executable), str(self.run_script),
+            "review",
+            "--harness_path", str(output_dir),
+            "--log_file", str(log_file),
+            "--project_root", str(project_root)
+        ]
+        print(f"Running command: {' '.join(cmd)}")
+        
+        try:
+            result = subprocess.run(
+                cmd, 
+                cwd=self.autoup_root,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                return True, f"AutoUP review completed successfully for {output_dir}"
+            else:
+                return False, f"AutoUP review failed for {output_dir} with return code {result.returncode}"
+                
+        except Exception as e:
+            return False, f"AutoUP review error: {e}"

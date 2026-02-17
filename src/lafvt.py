@@ -32,6 +32,11 @@ def main():
         print("Error: No OpenAI API Key provided. Set it via --OPENAI_API_KEY or in .env file.")
         return (1)
     
+    if not args.target_directory:
+        print("Error: No target directory provided. Use --target_directory to specify the directory to analyze.")
+        return (1)
+    
+    
     target_dir = Path(args.target_directory).resolve()
     output_dir = Path(args.output_dir).resolve()
     autoup_root = Path(args.autoup_root).resolve()
@@ -57,7 +62,7 @@ def main():
     
     # === 2. Select functions ===
     print("--- Step 2: Selecting target functions ---")
-    selected_funcs = analyzer.select(functions, N=5)  # Select top 5 high-risk functions
+    selected_funcs = analyzer.select(functions, N=1)  # Select top 5 high-risk functions
     if selected_funcs is None:
         print("No functions selected. Exiting.")
         return (0)
@@ -84,10 +89,10 @@ def main():
     # === 4. AutoUP ===
     print("--- Step 4: Running AutoUP ---")
     results = [] # Results for future merger expansion
+    autoup = AutoUPWrapper(autoup_root)
     
     for selected_func in uncached_funcs:
         start_time = time.time()
-        autoup = AutoUPWrapper(autoup_root)
         success, message = autoup.run(selected_func, output_dir)
         
         result = {
@@ -111,9 +116,13 @@ def main():
     timings['report_merging_time'] = time.time() - prev_time
     prev_time = time.time()
         
-    # 6. Validation
+    # 6. Review
     print("--- Step 6: Validating results ---")
-    # TODO: Add validation
+    success, message = autoup.review(output_dir, target_dir)
+    if not success:
+        print(f"AutoUP review failed: {message}")
+        return (1)
+    
     timings['validation_time'] = time.time() - prev_time
     
     print("--- LAFVT Execution Complete ---")
