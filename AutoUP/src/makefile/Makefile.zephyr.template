@@ -1,0 +1,54 @@
+# Defines the root of the project.
+# Be aware of how many directories deep you go!
+
+# The value of root changes project by project but for now I'll have it be the static RIOT path
+ROOT ?= {ROOT}
+
+# Harness to utilize, omit the extension!
+H_ENTRY = {H_ENTRY}
+
+# Extra CBMC flags to be passed during CBMC analysis
+H_CBMCFLAGS = --nondet-static --unwind 2 # Rest to be filled in by LLM
+
+# goto-instrument flags to replace function pointers with models
+FUNCTION_POINTER_REPL = \
+
+# Env vars, filled in by LLM
+H_DEF = -DCONFIG_BT_CTLR_SUBVERSION_NUMBER=0xFFFF -DCONFIG_BT_BUF_ACL_TX_COUNT=1 \
+        -DCONFIG_BT_CTLR_LLCP_TX_PER_CONN_TX_CTRL_BUF_NUM_MAX=1 -DCONFIG_BT_CTLR_LLCP_CONN=1 -DCONFIG_BT_CTLR_LLCP_COMMON_TX_CTRL_BUF_NUM=1 \
+        -DCONFIG_BT_BUF_ACL_TX_SIZE=100 -DCONFIG_BT_MAX_CONN=1 -DTICKER_ID_CONN_BASE=1 \
+        -DCONFIG_BT_CTLR_LOW_LAT=1 \
+        -DCONFIG_BT_CTLR_EVENT_IFS_LOW_LAT_US=1 -DCONFIG_BT_CTLR_COMPANY_ID=0x5F1 \
+        {H_DEF}
+
+# LLM should add more to this
+H_INC = \
+	-I$(ROOT) \
+	-I$(ROOT)/zephyr \
+	-I$(ROOT)/zephyr/build/zephyr/include/generated \
+	-I$(ROOT)/zephyr/build/zephyr/include/generated/zephyr \
+	-I$(ROOT)/zephyr/include \
+	-I$(ROOT)/zephyr/soc/native/inf_clock \
+	-I$(ROOT)/zephyr/boards/native/native_sim \
+	-I$(ROOT)/zephyr/lib/midi2/. \
+	-I$(ROOT)/zephyr/scripts/native_simulator/common/src/include \
+	-I$(ROOT)/zephyr/scripts/native_simulator/native/src/include \
+	-imacros $(ROOT)/zephyr/build/zephyr/include/generated/zephyr/devicetree_generated.h \
+	-imacros $(ROOT)/zephyr/build/zephyr/include/generated/zephyr/autoconf.h \
+	-I$(ROOT)/zephyr/subsys/bluetooth \
+	-I$(ROOT)/zephyr/subsys/bluetooth/controller/include \
+	-I$(ROOT)/zephyr/subsys/bluetooth/shell \
+	-I$(ROOT)/zephyr/subsys/bluetooth/controller/ll_sw \
+	-I$(ROOT)/zephyr/subsys/bluetooth/controller/ll_sw/nordic \
+	-I$(ROOT)/zephyr/subsys/bluetooth/controller \
+	-I$(ROOT)/zephyr/modules/cmsis \
+	-I$(ROOT)/zephyr/boards/native/common/irq \
+
+
+MAKE_INCLUDE_PATH ?= ..
+
+# Extra function model files to be linked into the harness
+LINK = $(MAKE_INCLUDE_PATH)/general-stubs.c
+
+# Include our special build file
+include $(MAKE_INCLUDE_PATH)/Makefile.include

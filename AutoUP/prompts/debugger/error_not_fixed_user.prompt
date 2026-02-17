@@ -1,0 +1,15 @@
+The previously suggested fix did not resolve the provided error.
+
+The updated value of each variable during the previous run, grouped by the scope they were defined in, is provided below:
+{variables}
+
+Your first objective is to evaluate the refinements you suggested in your previous response and the updated variables, 
+    determine why the previous refinement did not resolve the error, 
+    and propose a new refinement to resolve the error.
+
+It is possible that the error was not resolved because the proposed precondition was incomplete and did not consider all possible scenarios that could lead to the error.
+
+Finally, provide an updated harness file content to override the previous target file.
+If it is not possible to resolve the error using preconditions in the harness, provide a detailed analysis why and return empty fix_recommendation and updated_harness fields.
+
+Provide your response in the specified schema format.
