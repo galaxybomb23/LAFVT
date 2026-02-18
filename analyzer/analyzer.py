@@ -165,12 +165,34 @@ def infer_target_from_args(raw_args):
             return compiler[: -len(suffix)]
     return None
 
-def is_in_dir(path: Path, base: Path) -> bool:
-    try:
-        path.resolve().relative_to(base.resolve())
-        return True
-    except ValueError:
-        return False
+# ======= No-CCDB TU building helpers =======
+
+def build_args_for_tu(src, project_root, *, target=None, sysroot=None,
+                               std="c11", config_header=None, build_dir=None):
+    src = Path(src).resolve()
+    project_root = Path(project_root).resolve()
+
+    args = ["-x", "c", f"-std={std}", "-ferror-limit=0"]
+
+    # include paths
+    args += [f"-I{src.parent}", f"-I{project_root}", f"-I{project_root/'include'}"]
+
+    # generated/build headers (common in RTOS builds)
+    if build_dir:
+        bd = Path(build_dir).resolve()
+        args += [f"-I{bd}", f"-I{bd/'include'}"]
+
+    # target/sysroot
+    if target:
+        args += ["-target", target]
+    if sysroot:
+        args += ["--sysroot", sysroot]
+
+    # config injection
+    if config_header:
+        args += ["-include", str(Path(config_header).resolve())]
+
+    return args
 
 # ======= AST analysis helpers =======
 
@@ -452,40 +474,86 @@ def analyze_function(func_cursor, tu_path: str) -> FunctionMetrics:
 # Main: parse TUs, analyze functions, print CSV
 # ---------------------------------------------------------------------------
 
-def main():
-
-    configure_libclang()
-    parser = argparse.ArgumentParser(
-        description="Analyze C/C++ functions defined in a CCDB(compile_commands.json) using LEOPARD-style metrics."
-    )
-    parser.add_argument(
-        "target_dir",
-        help="Directory containing the compile_commands.json file",
-    )
-    parser.add_argument(
-        "--target",
-        help="Clang target ABI (e.g., arm-none-eabi).",
-    )
-    parser.add_argument(
-        "--sysroot",
-        help="Sysroot path for the target toolchain.",
-    )
-    args = parser.parse_args()
-
-    # Resolve target directory relative to CWD if not absolute
-    target_dir = Path(args.target_dir)
-    if not target_dir.is_absolute():
-        target_dir = (CWD / target_dir).resolve()
-    else:
-        target_dir = target_dir.resolve()
-
-    if not target_dir.exists():
-        print(f"ERROR: target directory does not exist: {target_dir}")
+def parse_files_no_ccdb(args, target_dir):
+    project_root = Path(args.project_root)
+    if args.project_root is None:
+        print(f"ERROR: project root needs to be provided in the case no CCDB is provided")
         return
+    if not project_root.is_absolute():
+        target_dir = (CWD / target_dir).resolve()
+    if not project_root.exists():
+        print(f"ERROR: project root directory does not exist")
+        return
+    
+    src_files = sorted([p for p in target_dir.rglob("*.c") if p.is_file()])
+    if not src_files:
+        print(f"ERROR: no .c files found under: {target_dir}")
+        return
+    index = cindex.Index.create()
+    seen_funcs = set()  # to avoid duplicates: (file, line, name)
+    all_metrics: List[FunctionMetrics] = []
+    num_functions = 0
+    failed_tu_diags_shown = 0
+    max_failed_tu_diags = 5
+    max_diags_per_tu = 5
 
-    # print("ROOT:", ROOT)
-    # print("TARGET_DIR:", target_dir)
+    for src in src_files:
+        project_root = args.project_root
+        args_for_tu = build_args_for_tu(
+            src=src,
+            project_root=project_root,
+            target=args.target,
+            sysroot=args.sysroot,
+        )
+        # Parse TU
+        try:
+            tu = index.parse(str(src), args=args_for_tu)
+        except cindex.TranslationUnitLoadError:
+            print(f"WARNING: failed to parse TU for {src}")
+            if failed_tu_diags_shown < max_failed_tu_diags:
+                try:
+                    tu = index.parse(
+                        str(src),
+                        args=args_for_tu,
+                        options=cindex.TranslationUnit.PARSE_INCOMPLETE,
+                    )
+                    print(f"Diagnostics for {src}:")
+                    for d in list(tu.diagnostics)[:max_diags_per_tu]:
+                        print(f"  {d.severity}: {d.spelling}")
+                    failed_tu_diags_shown += 1
+                except cindex.TranslationUnitLoadError:
+                    pass
+            continue
 
+        # Walk all function definitions in this TU
+        for cur in tu.cursor.walk_preorder():
+            if cur.kind == CursorKind.FUNCTION_DECL and cur.is_definition():
+                loc = cur.location
+                if not loc.file:
+                    continue
+                fpath = Path(loc.file.name).resolve()
+
+                key = (str(fpath), loc.line, cur.spelling)
+                if key in seen_funcs:
+                    continue
+                seen_funcs.add(key)
+
+                fm = analyze_function(cur, tu_path=str(src))
+                all_metrics.append(fm)
+
+    # Print CSV header
+    print("file,func,line,C1,C2,C3,C4,V1,V2,V3,V4,V5,V6,V7,V8,V9,V10,V11,complexity_score,vulnerability_score")
+    for fm in all_metrics:
+        print(
+            f"{fm.file_path},{fm.func_name},{fm.line},"
+            f"{fm.C1},{fm.C2},{fm.C3},{fm.C4},"
+            f"{fm.V1},{fm.V2},{fm.V3},{fm.V4},{fm.V5},"
+            f"{fm.V6},{fm.V7},{fm.V8},{fm.V9},{fm.V10},{fm.V11},"
+            f"{fm.complexity_score()},{fm.vulnerability_score()}"
+        )
+    print(f"len(all_metrics){len(all_metrics)}")
+
+def parse_files_ccdb(args, target_dir):
     ccdb_path = target_dir / "compile_commands.json"
     if not ccdb_path.is_file():
         print(f"ERROR: compile_commands.json not found: {ccdb_path}")
@@ -565,6 +633,54 @@ def main():
             f"{fm.complexity_score()},{fm.vulnerability_score()}"
         )
     print(f"len(all_metrics){len(all_metrics)}")
+
+def main():
+
+    configure_libclang()
+    parser = argparse.ArgumentParser(
+        description="Analyze C/C++ functions defined in a CCDB(compile_commands.json) using LEOPARD-style metrics."
+    )
+    parser.add_argument(
+        "target_dir",
+        help="Directory containing the compile_commands.json file",
+    )
+    parser.add_argument(
+        "--target",
+        help="Clang target ABI (e.g., arm-none-eabi).",
+    )
+    parser.add_argument(
+        "--sysroot",
+        help="Sysroot path for the target toolchain.",
+    )
+    parser.add_argument(
+        "--no_ccdb",
+        action="store_true",
+        help="If no CCDB available, use best effort AST. Needs project root provided"
+    )
+    parser.add_argument(
+        "--project_root",
+        help="Root of project, needs to be provided if no CCDB provided"
+    )
+    args = parser.parse_args()
+
+    # Resolve target directory relative to CWD if not absolute
+    target_dir = Path(args.target_dir)
+    if not target_dir.is_absolute():
+        target_dir = (CWD / target_dir).resolve()
+    else:
+        target_dir = target_dir.resolve()
+
+    if not target_dir.exists():
+        print(f"ERROR: target directory does not exist: {target_dir}")
+        return
+
+    # print("ROOT:", ROOT)
+    # print("TARGET_DIR:", target_dir)
+
+    if args.no_ccdb:
+        parse_files_no_ccdb(args, target_dir)
+    else:
+        parse_files_ccdb(args, target_dir)
 
 
 if __name__ == "__main__":
