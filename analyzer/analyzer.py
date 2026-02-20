@@ -267,13 +267,23 @@ def visit(cursor, state: AnalysisState, in_condition: bool = False):
     """
     kind = cursor.kind
 
-    # Handle cyclomatic complexity decision points (C1)
+    # Route control structures through the specialized handler so nesting metrics work
     if kind in (
         CursorKind.IF_STMT,
         CursorKind.FOR_STMT,
         CursorKind.WHILE_STMT,
         CursorKind.DO_STMT,
         CursorKind.SWITCH_STMT,
+    ):
+        visit_control_structure(
+            cursor,
+            state,
+            loop_like=kind in (CursorKind.FOR_STMT, CursorKind.WHILE_STMT, CursorKind.DO_STMT),
+        )
+        return
+
+    # Handle cyclomatic complexity decision points (C1)
+    if kind in (
         CursorKind.CASE_STMT,
         CursorKind.DEFAULT_STMT,
         CursorKind.CONDITIONAL_OPERATOR,

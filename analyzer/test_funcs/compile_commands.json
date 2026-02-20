@@ -1,0 +1,11 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "tests.c"
+    ],
+    "directory": "/home/arpan/Documents/CBMC/LAFVT/analyzer/test_funcs",
+    "file": "/home/arpan/Documents/CBMC/LAFVT/analyzer/test_funcs/tests.c"
+  }
+]
