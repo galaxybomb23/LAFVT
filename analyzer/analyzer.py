@@ -336,6 +336,8 @@ def visit_control_structure(cur, state: AnalysisState, loop_like: bool = False):
     - Optionally track loop depth (C2–C4)
     - Visit condition separately with in_condition=True to collect predicate vars
     """
+    # Cyclomatic complexity decision point for each control structure
+    state.fm.C1 += 1
     # Control structures for V6/V7
     depth = len(state.control_stack) + 1
     state.fm.V7 = max(state.fm.V7, depth)
@@ -439,6 +441,7 @@ def analyze_function(func_cursor, tu_path: str) -> FunctionMetrics:
     # maintain the control tree and loop depth.
     def walk(cur):
         k = cur.kind
+        #print("FOUND", k, cur.location.line)
         if k in (CursorKind.IF_STMT, CursorKind.SWITCH_STMT):
             visit_control_structure(cur, state, loop_like=False)
         elif k in (CursorKind.FOR_STMT, CursorKind.WHILE_STMT, CursorKind.DO_STMT):
@@ -551,7 +554,7 @@ def parse_files_no_ccdb(args, target_dir):
             f"{fm.V6},{fm.V7},{fm.V8},{fm.V9},{fm.V10},{fm.V11},"
             f"{fm.complexity_score()},{fm.vulnerability_score()}"
         )
-    print(f"len(all_metrics){len(all_metrics)}")
+    #print(f"len(all_metrics){len(all_metrics)}")
 
 def parse_files_ccdb(args, target_dir):
     ccdb_path = target_dir / "compile_commands.json"
@@ -632,7 +635,7 @@ def parse_files_ccdb(args, target_dir):
             f"{fm.V6},{fm.V7},{fm.V8},{fm.V9},{fm.V10},{fm.V11},"
             f"{fm.complexity_score()},{fm.vulnerability_score()}"
         )
-    print(f"len(all_metrics){len(all_metrics)}")
+    #print(f"len(all_metrics){len(all_metrics)}")
 
 def main():
 

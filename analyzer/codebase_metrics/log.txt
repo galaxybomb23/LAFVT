@@ -1,0 +1,6 @@
+libxslt:
+	time: 0m15.068s
+	number_funcs: 615
+libav:
+	time: 9m50.498s
+	number_funcs: 11913
