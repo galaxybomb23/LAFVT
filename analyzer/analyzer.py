@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import shlex
+import time
 
 import clang.cindex as cindex
 from clang.cindex import CursorKind, TypeKind
@@ -50,6 +51,14 @@ def configure_libclang():
 
 ROOT = Path(__file__).resolve().parent
 CWD = Path.cwd().resolve()
+
+def log_run(target_dir: Path, elapsed_sec: float, log_path=None) -> None:
+    if log_path is None:
+        log_path = ROOT / "analyzer.log"
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    with log_path.open("a") as f:
+        f.write(f"{timestamp} target_dir={target_dir} elapsed_sec={elapsed_sec:.3f}\n")
+
 @dataclass
 class FunctionMetrics:
     tu_path: str
@@ -271,6 +280,14 @@ def visit(cursor, state: AnalysisState, in_condition: bool = False):
     ):
         state.fm.C1 += 1
 
+    # If without else? (V10) for nested ifs reached via generic visit()
+    if kind == CursorKind.IF_STMT:
+        children = list(cursor.get_children())
+        # C89/C99/C11/C17: children are [cond, then, else?]
+        has_else = len(children) >= 3
+        if not has_else:
+            state.fm.V10 += 1
+
     # Count logical && / || as extra decisions
     if kind == CursorKind.BINARY_OPERATOR:
         visit_expr_for_logical_ops(cursor, state)
@@ -361,6 +378,7 @@ def visit_control_structure(cur, state: AnalysisState, loop_like: bool = False):
 
     # Heuristic for condition vs body:
     children = list(cur.get_children())
+    #print(f"cur.get_children", children)
     if cur.kind in (CursorKind.IF_STMT, CursorKind.WHILE_STMT):
         if children:
             # first child is usually the condition
@@ -395,11 +413,10 @@ def visit_control_structure(cur, state: AnalysisState, loop_like: bool = False):
             visit(ch, state, in_condition=False)
 
     # If without else? (V10)
+    # So I guess libclang python bindings don't include a hasElseStorage() binding :( 
+    # so approximate
     if cur.kind == CursorKind.IF_STMT:
-        has_else = any(ch.kind == CursorKind.IF_STMT or ch.kind == CursorKind.COMPOUND_STMT
-                       for ch in children[1:])
-        # above is a crude heuristic; better would be to inspect specific child roles
-        # but this still gives you "ifs without any explicit else-like block"
+        has_else = len(children) >= 3
         if not has_else:
             state.fm.V10 += 1
 
@@ -638,52 +655,58 @@ def parse_files_ccdb(args, target_dir):
     #print(f"len(all_metrics){len(all_metrics)}")
 
 def main():
+    start_time = time.perf_counter()
+    target_dir = None
+    try:
+        configure_libclang()
+        parser = argparse.ArgumentParser(
+            description="Analyze C/C++ functions defined in a CCDB(compile_commands.json) using LEOPARD-style metrics."
+        )
+        parser.add_argument(
+            "target_dir",
+            help="Directory containing the compile_commands.json file",
+        )
+        parser.add_argument(
+            "--target",
+            help="Clang target ABI (e.g., arm-none-eabi).",
+        )
+        parser.add_argument(
+            "--sysroot",
+            help="Sysroot path for the target toolchain.",
+        )
+        parser.add_argument(
+            "--no_ccdb",
+            action="store_true",
+            help="If no CCDB available, use best effort AST. Needs project root provided"
+        )
+        parser.add_argument(
+            "--project_root",
+            help="Root of project, needs to be provided if no CCDB provided"
+        )
+        args = parser.parse_args()
 
-    configure_libclang()
-    parser = argparse.ArgumentParser(
-        description="Analyze C/C++ functions defined in a CCDB(compile_commands.json) using LEOPARD-style metrics."
-    )
-    parser.add_argument(
-        "target_dir",
-        help="Directory containing the compile_commands.json file",
-    )
-    parser.add_argument(
-        "--target",
-        help="Clang target ABI (e.g., arm-none-eabi).",
-    )
-    parser.add_argument(
-        "--sysroot",
-        help="Sysroot path for the target toolchain.",
-    )
-    parser.add_argument(
-        "--no_ccdb",
-        action="store_true",
-        help="If no CCDB available, use best effort AST. Needs project root provided"
-    )
-    parser.add_argument(
-        "--project_root",
-        help="Root of project, needs to be provided if no CCDB provided"
-    )
-    args = parser.parse_args()
+        # Resolve target directory relative to CWD if not absolute
+        target_dir = Path(args.target_dir)
+        if not target_dir.is_absolute():
+            target_dir = (CWD / target_dir).resolve()
+        else:
+            target_dir = target_dir.resolve()
 
-    # Resolve target directory relative to CWD if not absolute
-    target_dir = Path(args.target_dir)
-    if not target_dir.is_absolute():
-        target_dir = (CWD / target_dir).resolve()
-    else:
-        target_dir = target_dir.resolve()
+        if not target_dir.exists():
+            print(f"ERROR: target directory does not exist: {target_dir}")
+            return
 
-    if not target_dir.exists():
-        print(f"ERROR: target directory does not exist: {target_dir}")
-        return
+        # print("ROOT:", ROOT)
+        # print("TARGET_DIR:", target_dir)
 
-    # print("ROOT:", ROOT)
-    # print("TARGET_DIR:", target_dir)
-
-    if args.no_ccdb:
-        parse_files_no_ccdb(args, target_dir)
-    else:
-        parse_files_ccdb(args, target_dir)
+        if args.no_ccdb:
+            parse_files_no_ccdb(args, target_dir)
+        else:
+            parse_files_ccdb(args, target_dir)
+    finally:
+        elapsed = time.perf_counter() - start_time
+        if target_dir is not None:
+            log_run(target_dir, elapsed)
 
 
 if __name__ == "__main__":
