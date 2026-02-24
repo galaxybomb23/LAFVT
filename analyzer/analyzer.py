@@ -290,60 +290,95 @@ def visit(cursor, state: AnalysisState, in_condition: bool = False):
     ):
         state.fm.C1 += 1
 
-    # If without else? (V10) for nested ifs reached via generic visit()
-    if kind == CursorKind.IF_STMT:
-        children = list(cursor.get_children())
-        # C89/C99/C11/C17: children are [cond, then, else?]
-        has_else = len(children) >= 3
-        if not has_else:
-            state.fm.V10 += 1
+    # ---------------------------
+    # V10: if without else
+    # ---------------------------
+    # So we do nothing here for IF_STMT.
 
-    # Count logical && / || as extra decisions
+    # ---------------------------
+    # Extra decisions: logical && / ||
+    # ---------------------------
     if kind == CursorKind.BINARY_OPERATOR:
         visit_expr_for_logical_ops(cursor, state)
 
-    # Pointer arithmetic detection (V3–V5, approximate)
+    # ---------------------------
+    # Pointer metrics (V3–V5)
+    # ---------------------------
     if kind == CursorKind.UNARY_OPERATOR:
-        # e.g., *ptr, ++ptr, ptr++
         tokens = [t.spelling for t in cursor.get_tokens()]
+
+        # deref/inc/dec (existing, but make robust by walking preorder)
         if any(tok in ("*", "++", "--") for tok in tokens):
-            # find a pointer variable referenced below
-            for child in cursor.get_children():
-                if child.kind == CursorKind.DECL_REF_EXPR and is_pointer_cursor(child):
-                    record_pointer_op(state, child)
+            for sub in cursor.walk_preorder():
+                if sub.kind == CursorKind.DECL_REF_EXPR and is_pointer_cursor(sub) and sub.spelling:
+                    record_pointer_op(state, sub)
                     break
 
-    if kind in (CursorKind.MEMBER_REF_EXPR, CursorKind.MEMBER_REF_EXPR):
-        # e.g., ptr->field
-        for child in cursor.get_children():
-            if child.kind == CursorKind.DECL_REF_EXPR and is_pointer_cursor(child):
-                record_pointer_op(state, child)
+        # NEW: address-of '&'
+        if "&" in tokens:
+            for sub in cursor.walk_preorder():
+                if sub.kind == CursorKind.DECL_REF_EXPR and sub.spelling:
+                    record_pointer_op(state, sub)
+                    break
+
+    # Member access: only count '->' and find base var robustly
+    if kind == CursorKind.MEMBER_REF_EXPR:
+        tokens = [t.spelling for t in cursor.get_tokens()]
+        if "->" in tokens:
+            for sub in cursor.walk_preorder():
+                if sub.kind == CursorKind.DECL_REF_EXPR and is_pointer_cursor(sub) and sub.spelling:
+                    record_pointer_op(state, sub)
+                    break
+
+    # NEW: array subscripting a[i]
+    if kind == CursorKind.ARRAY_SUBSCRIPT_EXPR:
+        for sub in cursor.walk_preorder():
+            if sub.kind == CursorKind.DECL_REF_EXPR and is_pointer_cursor(sub) and sub.spelling:
+                record_pointer_op(state, sub)
                 break
 
     if kind == CursorKind.BINARY_OPERATOR:
-        # e.g., ptr + 1, ptr - 1
         children = list(cursor.get_children())
+        tokens = [t.spelling for t in cursor.get_tokens()]
+
         if len(children) == 2:
             lhs, rhs = children
-            tokens = [t.spelling for t in cursor.get_tokens()]
+
+            # ptr +/- something
             if any(tok in ("+", "-") for tok in tokens):
                 if is_pointer_cursor(lhs) or is_pointer_cursor(rhs):
-                    # record for whichever is pointer-typed and a DeclRefExpr
-                    for child in (lhs, rhs):
-                        if child.kind == CursorKind.DECL_REF_EXPR and is_pointer_cursor(child):
-                            record_pointer_op(state, child)
-                            break
+                    for side in (lhs, rhs):
+                        for sub in side.walk_preorder():
+                            if sub.kind == CursorKind.DECL_REF_EXPR and is_pointer_cursor(sub) and sub.spelling:
+                                record_pointer_op(state, sub)
+                                break
+                        else:
+                            continue
+                        break
 
-    # CallExpr: record variables used as arguments (V2)
+            # NEW: pointer comparisons
+            if any(tok in ("==", "!=", "<", "<=", ">", ">=") for tok in tokens):
+                if is_pointer_cursor(lhs) or is_pointer_cursor(rhs):
+                    for side in (lhs, rhs):
+                        for sub in side.walk_preorder():
+                            if sub.kind == CursorKind.DECL_REF_EXPR and is_pointer_cursor(sub) and sub.spelling:
+                                record_pointer_op(state, sub)
+                                break
+
+    # ---------------------------
+    # V2: vars used as parameters in calls
+    # ---------------------------
     if kind == CursorKind.CALL_EXPR:
-        for arg in cursor.get_children():
-            # libclang usually puts the callee as the first child; args after that
-            if arg.kind == CursorKind.DECL_REF_EXPR:
+        # skip callee
+        call_children = list(cursor.get_children())
+        arg_nodes = call_children[1:] if len(call_children) >= 2 else []
+
+        for arg in arg_nodes:
+            if arg.kind == CursorKind.DECL_REF_EXPR and arg.spelling:
                 state.call_arg_vars.add(arg.spelling)
             else:
-                # in case args are more complex expressions, descend
                 for sub in arg.walk_preorder():
-                    if sub.kind == CursorKind.DECL_REF_EXPR:
+                    if sub.kind == CursorKind.DECL_REF_EXPR and sub.spelling:
                         state.call_arg_vars.add(sub.spelling)
 
     # DeclRefExpr inside a control predicate (V9, V11)
