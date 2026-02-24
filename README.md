@@ -20,42 +20,188 @@ git submodule update --remote --merge
 
 ## Run the LAFVT Tool
 
-From Here you can run the LAFVT tool using the following command:
-
-python src/lafvt.py --target_directory <target_directory> --output_dir <output_dir> --autoup_root <autoup_root>
-
-Example:
+Run LAFVT by pointing it at the root of the C/C++ project you want to verify:
 
 ```bash
-python src/lafvt.py --target_directory test_functions
-```
-
-NOTE: The autoup_root is the root directory of the AutoUP tool. By default it is set to ./AutoUP
-NOTE: The output_dir is the directory where the results will be stored. By default it is set to ./lafvt_output
-
-Optional Arguments:
-`--no-cache`: Disable Cache Checkpointing
-
-## Run Metrics Script
-This script leverages the log files produced by LAFVT and AutoUP to calculate metrics for the LAFVT Toolchain.
-
-### Usage
-```bash
-python metrics_calculator.py "Absolute file path to AutoUP output directory that holds the log files and harnesses for a codebase"
+python src/lafvt.py --project_dir <path/to/project>
 ```
 
 Example:
+
 ```bash
-python metrics_calculator.py "C:\Users\gaura\Desktop\LAFVT\LAFVT\AutoUp-output\output-2026-01-24_16-32-18-RIOT"
+python src/lafvt.py --project_dir RIOT/sys
 ```
+
+Results are written to `<project_dir>/lafvt_output/` automatically. The AutoUP submodule path is resolved from the repository structure and does not need to be specified.
+
+### Running stages standalone
+
+Each stage can be invoked independently without running the full pipeline.
+
+**Stage 1 — Analyzer**
+```bash
+python -m analyzer <path/to/source> \
+    --algorithm lizard \
+    --selector top_N \
+    --threshold 10 \
+    --output-dir ./lafvt_output
+```
+See the [Analyzer](#analyzer) section below for full details.
+
+**Stage 2 — Proofer**
+```bash
+python src/autoup_wrapper.py proof \
+    --manifest_csv  lafvt_output/analysis_manifest.csv \
+    --output_dir    lafvt_output \
+    --project_root  <path/to/project> \
+    --llm_model     gpt-5.2 \
+    --j             10
+```
+
+**Stage 3 — Review**
+```bash
+python src/autoup_wrapper.py review \
+    --output_dir   lafvt_output \
+    --project_root <path/to/project>
+```
+
+**Stages 2+3 — Proof then Review**
+```bash
+python src/autoup_wrapper.py all \
+    --manifest_csv  lafvt_output/analysis_manifest.csv \
+    --output_dir    lafvt_output \
+    --project_root  <path/to/project> \
+    --llm_model     gpt-5.2 \
+    --j             10
+```
+
+**Stage 5 — Metrics** (also runs automatically at end of full pipeline)
+```bash
+python src/metrics_calculator.py <output_dir> \
+    --model gpt-5.2 \
+    [--source_dir <path/to/source>]
+```
+
+### Arguments
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `--project_dir` | Yes | — | Root directory of the C/C++ project to verify |
+| `--algorithm` | No | `lizard` | Static analysis algorithm (`lizard`, `loc`) |
+| `--selector` | No | `top_N` | Function selection strategy (`top_N`, `top_risk`, etc.) |
+| `--llm_model` | No | `gpt-5.2` | LLM model forwarded to AutoUP agents |
+| `--j` | No | `10` | Maximum number of parallel AutoUP prover workers |
+| `--OPENAI_API_KEY` | No | reads `.env` | Override the OpenAI API key |
+| `--target_directory` | No | `project_dir` | Restrict analysis to this subdirectory (must be inside `project_dir`) |
+| `--skip-proof` | No | `False` | Skip Stage 2 (AutoUP); go straight to Review + Report assuming output dir is already populated |
+| `--skip-review` | No | `False` | Skip Stage 3 (Review); go straight to Report assuming `violation_assessments.json` already exists |
+| `--demo` | No | `False` | Pause after each stage and print a brief summary before continuing |
+
+The `OPENAI_API_KEY` is resolved in priority order: `--OPENAI_API_KEY` flag → `.env` file at the repo root → shell environment variable.
 
 ### Output
-Currently implements the "Time taken to generate harness in seconds" and "Harness generation cost in tokens" metrics.
 
-The output will be present in a directory named "LAFVT_metrics" (within the input directory), which should contain a second directory named "reports" (function-level metrics) and a "codebase_summary.json" file.
+```
+<project_dir>/lafvt_output/
+├── lafvt.log                    # combined run log
+├── timing_data.json             # per-stage wall-clock timings
+├── LAFVT_metrics.json           # token usage, cost, timing summary (Stage 5)
+├── lizard_analysis.csv          # full analyzer output
+├── analysis_manifest.csv        # selected functions passed to the proofer
+├── <file_slug>/<function>/      # per-function AutoUP artifacts
+│   ├── build/
+│   ├── autoup_metrics.jsonl
+│   ├── violation.json
+│   └── execution.log
+├── violation_assessments.json   # scored review output
+├── validation_summary.json      # global rollup
+└── final_report.html            # interactive HTML report
+```
 
-- Metrics for harness generation using AutoUP on a per-function basis
-- Codebase level summary
+## Run Metrics Script
+
+`MetricsCalculator` parses AutoUP telemetry files (``.jsonl``) produced by a LAFVT run and
+aggregates token usage, cost, and timing data per function and across the codebase.
+It is automatically run as **Stage 5** of the full LAFVT pipeline, but can also be
+invoked standalone against any output directory.
+
+### File discovery
+
+The calculator uses a two-stage discovery strategy:
+
+1. **LAFVT-structured** (preferred) — looks for `autoup_metrics.jsonl` in the
+   standard two-level layout `<output_dir>/<file_slug>/<function_name>/autoup_metrics.jsonl`.
+2. **Recursive fallback** — if no structured files are found, every `*.jsonl` file
+   anywhere under the given directory is collected.  The function name is derived from
+   the file stem after stripping common prefixes (`metrics-`, `autoup_`).  This handles
+   ad-hoc AutoUP output directories that are not produced by a full LAFVT run.
+
+### Usage
+
+```bash
+python src/metrics_calculator.py <output_dir> \
+    [--model gpt-5.2] \
+    [--source_dir <path/to/source>] \
+    [--codebase_name <name>]
+```
+
+Examples:
+
+```bash
+# LAFVT output directory (structured)
+python src/metrics_calculator.py RIOT/lafvt_output --model gpt-5.2
+
+# Standalone AutoUP output directory (flat / any layout)
+python src/metrics_calculator.py /path/to/autoup-output-2026-01-24 --model gpt-5.2 --source_dir RIOT/sys
+```
+
+### Arguments
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `output_dir` | Yes | — | Directory containing `.jsonl` metrics files (LAFVT or standalone AutoUP output) |
+| `--model` | No | `gpt-5.2` | LLM model used during proof run; selects pricing row |
+| `--source_dir` | No | — | C/C++ source tree root for per-function LOC (fallback — used only when no `analysis_manifest.csv` is present in `output_dir`) |
+| `--codebase_name` | No | parent dir name | Override the codebase name in the output JSON |
+
+### Output
+
+Writes **`LAFVT_metrics.json`** into the `output_dir`.  Contains:
+
+- Codebase-level summary
+- Per-function breakdown with token usage, cost, timing, and per-agent stats
+- Per-function LOC, resolved in priority order:
+  1. **`analysis_manifest.csv`** in `output_dir` (written by Stage 1 — available automatically in all LAFVT pipeline runs, no extra flag needed)
+  2. **`--source_dir` tree scan** using Lizard (fallback for non-LAFVT output directories)
+  3. `null` if neither source is available
+
+Example codebase-level summary:
+
+```json
+{
+    "codebase_name": "RIOT",
+    "model": "gpt-5.2",
+    "total_functions_processed": 192,
+    "metrics": {
+        "real_execution_time_seconds": 106441.73,
+        "serial_execution_time_seconds": 1059446.14,
+        "total_lines_of_code": 21960,
+        "token_usage": {
+            "input_tokens": 159457227,
+            "cached_tokens": 506417280,
+            "output_tokens": 15623076,
+            "total_tokens": 681497583
+        },
+        "cost": {
+            "input_cost": 279.05,
+            "cached_cost": 88.62,
+            "output_cost": 218.72,
+            "total_cost": 586.40,
+            "cost_per_100_loc": 2.67
+        }
+    }
+}
+```
 
 ## Analyzer
 
@@ -146,133 +292,5 @@ for func in selected:
 
 
 ## Run Metrics Script
-This script leverages the log and metrics files produced by AutoUP and LAFVT to calculate metrics.
 
-### Usage
-This script takes the following arguments:
-
-    --input_dir: The directory containing the log and metrics files.
-    **Note**: Required
-
-    --model: The model used to generate the metrics.
-    **Note**: Optional. Default is gpt-5.2
-
-    --source_dir: The directory containing the source code.
-    **Note**: Optional. If left empty, it will not calculate lines of code or any other related metrics (e.g. cost per 100 LOC).
-
-Run the script using the following command:
-```bash
-python src/metrics_calculator.py <input_dir> --model <model_name> --source_dir <path_to_source>
-```
-
-Example:
-```bash
-python metrics_calculator.py "C:\Users\gaura\Desktop\LAFVT\LAFVT\AutoUp-output\output-2026-01-24_16-32-18-RIOT" --model gpt-5.2 --source_dir "C:\Users\gaura\Desktop\LAFVT\LAFVT\RIOT\sys"
-```
-
-### Output
-Currently implements the "Time taken to generate harness in seconds" and "Harness generation cost" metrics.
-
-The output will be present in a directory named "LAFVT_metrics" (within the input directory), which should contain a second directory named "reports" (function-level metrics) and a "codebase_summary.json" file.
-
-- Codebase-level Metrics Summary
-    Example output:
-    ```json
-    {
-        "codebase_name": "RIOT",
-        "total_functions_processed": 192,
-        "metrics": {
-            "real_execution_time_seconds": 106441.72755432129,
-            "serial_execution_time_seconds": 1059446.1432557106,
-            "total_lines_of_code": 21960,
-            "token_usage": {
-                "input_tokens": 159457227.0,
-                "cached_tokens": 506417280.0,
-                "output_tokens": 15623076.0,
-                "total_tokens": 681497583.0
-            },
-            "cost": {
-                "input_cost": 279.05014725000007,
-                "cached_cost": 88.623024,
-                "output_cost": 218.72306400000025,
-                "total_cost": 586.3962352499997,
-                "cost_per_100_loc": 2.6702925102459
-            }
-        }
-    }
-    ```
-
-- Metrics for harness generation using AutoUP on a per-function basis
-    Example Output:
-    ```json
-   {
-        "function_name": "bluetil_addr_from_str",
-        "harness_path": "/home/jorgenel/work/RIOT/harnesses/bluetil_addr/bluetil_addr_from_str",
-        "lines_of_code": 73,
-        "serial_execution_time_seconds": 850.8417167663574,
-        "token_usage": {
-            "input_tokens": 180985,
-            "cached_tokens": 196096,
-            "output_tokens": 16452,
-            "total_tokens": 393533
-        },
-        "cost": {
-            "input_cost": 0.31672375,
-            "cached_cost": 0.0343168,
-            "output_cost": 0.230328,
-            "total_cost": 0.58136855
-        },
-        "metrics_per_agent": {
-            "InitialHarnessGenerator": {
-                "input_tokens": 4145,
-                "cached_tokens": 1664,
-                "output_tokens": 1456,
-                "total_tokens": 5601,
-                "input_cost": 0.00434175,
-                "cached_cost": 0.0002912,
-                "output_cost": 0.020384,
-                "total_cost": 0.02501695
-            },
-            "MakefileGenerator": {
-                "input_tokens": 43810,
-                "cached_tokens": 28800,
-                "output_tokens": 2069,
-                "total_tokens": 45879,
-                "input_cost": 0.0262675,
-                "cached_cost": 0.005039999999999999,
-                "output_cost": 0.028966,
-                "total_cost": 0.0602735
-            },
-            "CoverageDebugger": {
-                "input_tokens": 265262,
-                "cached_tokens": 141056,
-                "output_tokens": 7781,
-                "total_tokens": 273043,
-                "input_cost": 0.2173605,
-                "cached_cost": 0.0246848,
-                "output_cost": 0.10893399999999999,
-                "total_cost": 0.3509793
-            },
-            "PreconditionValidator": {
-                "input_tokens": 39900,
-                "cached_tokens": 14592,
-                "output_tokens": 3153,
-                "total_tokens": 43053,
-                "input_cost": 0.044289,
-                "cached_cost": 0.0025536,
-                "output_cost": 0.044142,
-                "total_cost": 0.0909846
-            },
-            "debugger": {
-                "input_tokens": 23964,
-                "cached_tokens": 9984,
-                "output_tokens": 1993,
-                "total_tokens": 25957,
-                "input_cost": 0.024465,
-                "cached_cost": 0.0017472,
-                "output_cost": 0.027902,
-                "total_cost": 0.0541142
-            }
-        }
-    }
-    ``` 
+See the [Metrics Script](#run-metrics-script) section above. 

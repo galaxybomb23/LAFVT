@@ -135,10 +135,10 @@ class Analyzer:
         N: int = 1,
         output_dir: Optional[Path] = None,
         analysis_csv: Optional[Path] = None,
+        output_path: Optional[Path] = None,
     ) -> Optional[List[Dict[str, Any]]]:
         """
-        Apply the selector to the analysis results and save
-        ``selected_functions.csv``.
+        Apply the selector to the analysis results and save the output CSV.
 
         Call :meth:`analyze` first, or pass *analysis_csv* to load from a
         previously saved CSV.
@@ -150,12 +150,16 @@ class Analyzer:
             selector-specific; e.g. ``top_risk`` returns the *N* highest-
             scoring functions, while ``longest`` always returns 1).
         output_dir:
-            Where to write ``selected_functions.csv``.  Defaults to
-            *project_root*.
+            Directory in which to write the output CSV when *output_path* is
+            not given.  Defaults to *project_root*.
         analysis_csv:
             Path to a CSV produced by a previous :meth:`analyze` call.  When
             supplied, the in-memory DataFrame is replaced with the CSV
             contents.
+        output_path:
+            Explicit destination path for the selection CSV (including
+            filename).  When provided, *output_dir* is ignored for the CSV
+            location.  Defaults to ``<output_dir>/selected_functions.csv``.
 
         Returns
         -------
@@ -173,15 +177,19 @@ class Analyzer:
             logger.warning("No analysis data available — call analyze() first.")
             return None
 
-        output_dir = Path(output_dir) if output_dir else self.project_root
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if output_path is not None:
+            csv_path = Path(output_path)
+        else:
+            resolved_dir = Path(output_dir) if output_dir else self.project_root
+            csv_path = resolved_dir / "selected_functions.csv"
+
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
 
         logger.info("Running '%s' selector (N=%d)", self._selector.name, N)
         selected_df = self._selector.select(self._analysis_df, N=N)
 
-        csv_path = output_dir / "selected_functions.csv"
         selected_df.to_csv(csv_path, index=False)
-        logger.info("selected_functions.csv saved to: %s", csv_path)
+        logger.info("Selection CSV saved to: %s", csv_path)
 
         # Return full rows from the in-memory DataFrame so downstream code
         # (e.g. AutoUP) can access code, includes, and other rich fields.
