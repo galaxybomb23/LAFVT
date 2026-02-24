@@ -144,3 +144,135 @@ for func in selected:
     print(func["function_name"], func["filepath"])
 ```
 
+
+## Run Metrics Script
+This script leverages the log and metrics files produced by AutoUP and LAFVT to calculate metrics.
+
+### Usage
+This script takes the following arguments:
+
+    --input_dir: The directory containing the log and metrics files.
+    **Note**: Required
+
+    --model: The model used to generate the metrics.
+    **Note**: Optional. Default is gpt-5.2
+
+    --source_dir: The directory containing the source code.
+    **Note**: Optional. If left empty, it will not calculate lines of code or any other related metrics (e.g. cost per 100 LOC).
+
+Run the script using the following command:
+```bash
+python src/metrics_calculator.py <input_dir> --model <model_name> --source_dir <path_to_source>
+```
+
+Example:
+```bash
+python metrics_calculator.py "C:\Users\gaura\Desktop\LAFVT\LAFVT\AutoUp-output\output-2026-01-24_16-32-18-RIOT" --model gpt-5.2 --source_dir "C:\Users\gaura\Desktop\LAFVT\LAFVT\RIOT\sys"
+```
+
+### Output
+Currently implements the "Time taken to generate harness in seconds" and "Harness generation cost" metrics.
+
+The output will be present in a directory named "LAFVT_metrics" (within the input directory), which should contain a second directory named "reports" (function-level metrics) and a "codebase_summary.json" file.
+
+- Codebase-level Metrics Summary
+    Example output:
+    ```json
+    {
+        "codebase_name": "RIOT",
+        "total_functions_processed": 192,
+        "metrics": {
+            "real_execution_time_seconds": 106441.72755432129,
+            "serial_execution_time_seconds": 1059446.1432557106,
+            "total_lines_of_code": 21960,
+            "token_usage": {
+                "input_tokens": 159457227.0,
+                "cached_tokens": 506417280.0,
+                "output_tokens": 15623076.0,
+                "total_tokens": 681497583.0
+            },
+            "cost": {
+                "input_cost": 279.05014725000007,
+                "cached_cost": 88.623024,
+                "output_cost": 218.72306400000025,
+                "total_cost": 586.3962352499997,
+                "cost_per_100_loc": 2.6702925102459
+            }
+        }
+    }
+    ```
+
+- Metrics for harness generation using AutoUP on a per-function basis
+    Example Output:
+    ```json
+   {
+        "function_name": "bluetil_addr_from_str",
+        "harness_path": "/home/jorgenel/work/RIOT/harnesses/bluetil_addr/bluetil_addr_from_str",
+        "lines_of_code": 73,
+        "serial_execution_time_seconds": 850.8417167663574,
+        "token_usage": {
+            "input_tokens": 180985,
+            "cached_tokens": 196096,
+            "output_tokens": 16452,
+            "total_tokens": 393533
+        },
+        "cost": {
+            "input_cost": 0.31672375,
+            "cached_cost": 0.0343168,
+            "output_cost": 0.230328,
+            "total_cost": 0.58136855
+        },
+        "metrics_per_agent": {
+            "InitialHarnessGenerator": {
+                "input_tokens": 4145,
+                "cached_tokens": 1664,
+                "output_tokens": 1456,
+                "total_tokens": 5601,
+                "input_cost": 0.00434175,
+                "cached_cost": 0.0002912,
+                "output_cost": 0.020384,
+                "total_cost": 0.02501695
+            },
+            "MakefileGenerator": {
+                "input_tokens": 43810,
+                "cached_tokens": 28800,
+                "output_tokens": 2069,
+                "total_tokens": 45879,
+                "input_cost": 0.0262675,
+                "cached_cost": 0.005039999999999999,
+                "output_cost": 0.028966,
+                "total_cost": 0.0602735
+            },
+            "CoverageDebugger": {
+                "input_tokens": 265262,
+                "cached_tokens": 141056,
+                "output_tokens": 7781,
+                "total_tokens": 273043,
+                "input_cost": 0.2173605,
+                "cached_cost": 0.0246848,
+                "output_cost": 0.10893399999999999,
+                "total_cost": 0.3509793
+            },
+            "PreconditionValidator": {
+                "input_tokens": 39900,
+                "cached_tokens": 14592,
+                "output_tokens": 3153,
+                "total_tokens": 43053,
+                "input_cost": 0.044289,
+                "cached_cost": 0.0025536,
+                "output_cost": 0.044142,
+                "total_cost": 0.0909846
+            },
+            "debugger": {
+                "input_tokens": 23964,
+                "cached_tokens": 9984,
+                "output_tokens": 1993,
+                "total_tokens": 25957,
+                "input_cost": 0.024465,
+                "cached_cost": 0.0017472,
+                "output_cost": 0.027902,
+                "total_cost": 0.0541142
+            }
+        }
+    }
+    ``` 
