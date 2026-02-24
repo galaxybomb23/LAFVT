@@ -14,8 +14,8 @@ class AutoUPWrapper:
         Runs AutoUP on the specified function.
         Returns (success, message).
         """
-        func_name = function_data['name']
-        file_path = Path(function_data['file'])
+        func_name = function_data['function_name']
+        file_path = Path(function_data['filepath'])
         file_name = file_path.stem
         
         # Assuming its cwd as user should execute from root (maybe add a flag later)

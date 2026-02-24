@@ -74,7 +74,7 @@ class ViolationReviewer(AIAgent, Generable):
                                         })
                 except Exception as e:
                     print(f"Error reading {path}: {e}")
-
+        print(f"Extracted {len(vb_conditions)} violated buggy conditions for review.")
         return vb_conditions
 
     def get_top_threats(self, top_n=-1):

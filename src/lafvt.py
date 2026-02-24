@@ -6,10 +6,8 @@ import os
 
 # Import internal modules
 from analyzer import Analyzer
-from checkpointer import FunctionCheckpointer
 from autoup_wrapper import AutoUPWrapper
-from report_merger import ReportMerger
-from assessment_report_generator import ViolationAssessmentReport
+from LAFVT.src.report_generator import ViolationAssessmentReport
 
 # for analysis
 import time
@@ -57,11 +55,13 @@ def main():
     # === 1. Extract and Analyze functions ===
 
     print("--- Step 1: Extracting and analyzing functions ---")
-    analyzer = Analyzer(selection_algorithm='top_risk')
-    functions = analyzer.analyze_and_extract(target_dir)
-    if functions is None:
+    analyzer = Analyzer(project_root=root_dir, algorithm='lizard', selector='top_N')
+    analyzer.analyze(target_dir, output_dir=output_dir)
+    analysis_df = analyzer.get_analysis_dataframe()
+    if analysis_df is None or analysis_df.empty:
         print("No functions found. Exiting.")
         return (0)
+    functions = analysis_df  # keep reference for timing stats
     print(f"Found {len(functions)} functions.")
     
     timings['extraction_time'] = time.time() - prev_time
@@ -69,16 +69,16 @@ def main():
     
     # === 2. Select functions ===
     print("--- Step 2: Selecting target functions ---")
-    selected_funcs = analyzer.select(functions, N=1)  # Select top 5 high-risk functions
+    selected_funcs = analyzer.select(N=1, output_dir=output_dir)
     if selected_funcs is None:
         print("No functions selected. Exiting.")
         return (0)
-    print(f"Selected functions ({len(selected_funcs)}): {', '.join([func['name'] for func in selected_funcs])}")
+    print(f"Selected functions ({len(selected_funcs)}): {', '.join([func['function_name'] for func in selected_funcs])}")
 
     timings['selection_time'] = time.time() - prev_time
     prev_time = time.time()
 
-    print(f"Sample selected function:\n{selected_funcs[0]}")
+    print(f"Sample selected function:\n{selected_funcs[0] if selected_funcs else 'N/A'}")
 
     # === 3. Check Cache ===
     print("--- Step 3: Checking cache ---")
@@ -104,10 +104,10 @@ def main():
     #     success, message = autoup.run(selected_func, output_dir)
         
     #     result = {
-    #         "name": selected_func['name'],
+    #         "name": selected_func['function_name'],
     #         "success": success,
     #         "message": message,
-    #         "artifacts_path": str(output_dir / selected_func['name']),
+    #         "artifacts_path": str(output_dir / selected_func['function_name']),
     #         "runtime": time.time() - start_time
     #     }
     #     results.append(result)
@@ -140,10 +140,11 @@ def main():
     ps = "\n--- Timing Analytics ---\n"
     
     # Function Extraction Time
+    num_functions = len(functions)
     ps += f"==> Function Extraction and Analysis Time:\n"
     ps += f"\t Total Time: {timings['extraction_time']:.2f} seconds.\n"
-    ps += f"\t Extracted and analyzed {len(functions)} functions.\n"
-    ps += f"\t Average time per function: {timings['extraction_time'] / len(functions):.2f} seconds.\n"
+    ps += f"\t Extracted and analyzed {num_functions} functions.\n"
+    ps += f"\t Average time per function: {timings['extraction_time'] / num_functions:.2f} seconds.\n"
     
     # Function Selection Time
     ps += f"==> Function Selection Time:\n"
@@ -181,8 +182,8 @@ def main():
         "timestamp": time.time(),
         "extraction": {
             "total_time": timings['extraction_time'],
-            "functions_extracted": len(functions),
-            "avg_time_per_function": timings['extraction_time'] / len(functions) if functions else 0
+            "functions_extracted": num_functions,
+            "avg_time_per_function": timings['extraction_time'] / num_functions if num_functions else 0
         },
         "selection": {
             "total_time": timings['selection_time'],
