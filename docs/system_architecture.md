@@ -16,56 +16,65 @@ LAFVT (Lightweight Automated Function Verification Toolchain) is a **five-stage 
 
 ```mermaid
 flowchart TD
-    CLI["LAFVT CLI\n--project_dir  --target_directory\n--algorithm  --selector\n--llm_model  --j\n--demo  --skip-proof  --skip-review"]
+    CLI(["LAFVT CLI"])
 
     subgraph Stage1["Stage 1 — Analyzer"]
-        A1["Analyzer.analyze(target_dir)\n→ lizard_analysis.csv"]
-        A2["Analyzer.select(N, output_path=manifest_path)\n→ analysis_manifest.csv"]
+        A1["Analyzer.analyze()"]
+        A2["Analyzer.select()"]
         A1 --> A2
     end
+    CSV1[/"lizard_analysis.csv"/]
+    CSV2[/"analysis_manifest.csv"/]
+    A1 -. writes .-> CSV1
+    A2 -. writes .-> CSV2
 
     SKIP2{"--skip-proof?"}
-    subgraph Stage2["Stage 2 — Proofer  (j parallel workers)"]
-        P1["AutoUPWrapper.run_parallel()\nThreadPoolExecutor(max_workers=j)"]
-        P2["Worker 1\nrun.py all\n[file_slug]/[func]/"]
-        P3["Worker 2\nrun.py all\n[file_slug]/[func]/"]
-        P4["Worker N\nrun.py all\n[file_slug]/[func]/"]
-        P1 --> P2 & P3 & P4
+
+    subgraph Stage2["Stage 2 — Proofer"]
+        P1["run_parallel()<br/>ThreadPoolExecutor"]
+        P2["Worker 1 … j<br/>run.py all"]
+        PCANCEL["cancel_all()<br/>SIGTERM → SIGKILL"]
+        P1 --> P2
+        P2 -.->|"Ctrl+C"| PCANCEL
     end
+    ART[/"&lt;slug&gt;/&lt;func&gt;/<br/>autoup_metrics.jsonl<br/>violation.json<br/>execution.log"/]
+    P2 -. writes .-> ART
 
     SKIP3{"--skip-review?"}
+
     subgraph Stage3["Stage 3 — Review"]
-        R1["AutoUPWrapper.review()\nrun.py review\n→ violation_assessments.json\n→ validation_summary.json"]
+        R1["review()<br/>run.py review"]
     end
+    ASS[/"violation_assessments.json<br/>validation_summary.json"/]
+    R1 -. writes .-> ASS
 
     subgraph Stage4["Stage 4 — Report"]
-        RPT["ViolationAssessmentReport.generate()\n→ final_report.html"]
+        RPT["ViolationAssessmentReport<br/>.generate()"]
     end
+    HTML[/"final_report.html"/]
+    RPT -. writes .-> HTML
 
     subgraph Stage5["Stage 5 — Metrics"]
-        direction TB
-        M1{"LAFVT structure?"}
-        M2["Collect autoup_metrics.jsonl\n(2-level: slug/func/) "]
-        M3["Recursive *.jsonl scan\n(any depth, strip prefix)"]
-        M4["MetricsCalculator.calculate()\n→ LAFVT_metrics.json"]
+        M1{"LAFVT structure<br/>present?"}
+        M2["Collect<br/>autoup_metrics.jsonl"]
+        M3["Recursive *.jsonl scan<br/>strip known prefixes"]
+        M4["MetricsCalculator<br/>.calculate()"]
         M1 -- "yes" --> M2
-        M1 -- "no (fallback)" --> M3
-        M2 --> M4
-        M3 --> M4
+        M1 -- "no" --> M3
+        M2 & M3 --> M4
     end
-
-    OUT["lafvt_output/\n  analysis_manifest.csv\n  [file_slug]/[func]/\n    autoup_metrics.jsonl\n    violation.json\n    execution.log\n  violation_assessments.json\n  validation_summary.json\n  final_report.html\n  LAFVT_metrics.json\n  lafvt.log\n  timing_data.json"]
+    MJ[/"LAFVT_metrics.json"/]
+    M4 -. writes .-> MJ
 
     CLI --> Stage1
     Stage1 --> SKIP2
     SKIP2 -- "no" --> Stage2
-    SKIP2 -- "yes (use existing output)" --> SKIP3
+    SKIP2 -- "yes" --> SKIP3
     Stage2 --> SKIP3
     SKIP3 -- "no" --> Stage3
-    SKIP3 -- "yes (use existing JSON)" --> Stage4
+    SKIP3 -- "yes" --> Stage4
     Stage3 --> Stage4
     Stage4 --> Stage5
-    Stage5 --> OUT
 ```
 
 ---
@@ -153,6 +162,14 @@ This separation means the `run` and `review` methods can evolve (e.g. support Ap
 | **Non-fatal** | Wrapped in `try/except` in `lafvt.py`; a failure never aborts a completed run |
 | Data source | `autoup_metrics.jsonl` files inside `output_dir` |
 
+**LOC resolution — three-tier priority:**
+
+| Priority | Source | Condition |
+|----------|--------|-----------|
+| 1 (preferred) | `analysis_manifest.csv` in `output_dir` | Present in all LAFVT pipeline runs; provides direct `filepath → function` mapping, no tree scan needed |
+| 2 (fallback) | `--source_dir` tree walk via **Lizard** | Used when no manifest is present (standalone / non-LAFVT output dirs); Lizard gives accurate `start_line`/`end_line`; brace-counting used if Lizard cannot locate the function |
+| 3 | `null` | Neither source available |
+
 **File discovery — two-stage strategy:**
 
 | Priority | Condition | Strategy |
@@ -166,43 +183,73 @@ The fallback handles ad-hoc AutoUP output directories (e.g. `metrics-avrcp-func_
 
 ## Data Flow
 
-```
-User CLI args
-      │
-      ▼
- [Validate inputs]  ← project_dir must exist; target_directory must be subdir of project_dir
-                       OPENAI_API_KEY must be set
-      │
-      ▼
- [Stage 1: Analyzer]   ← analyzes target_dir (defaults to project_dir)
-   target_dir ──► lizard_analysis.csv
-                  analysis_manifest.csv ──────────────────┐
-      │                                                   │
-      │  (--skip-proof bypasses this stage)               │
-      ▼                                                   │
- [Stage 2: Proofer]  ◄─────────────────────────────────────┘
-   j parallel workers each produce:
-     output_dir/<file_slug>/<func>/
-       build/  autoup_metrics.jsonl  violation.json  execution.log
-      │
-      │  (--skip-review bypasses this stage)
-      ▼
- [Stage 3: Review]
-   output_dir/ ──► violation_assessments.json
-                   validation_summary.json
-      │
-      ▼
- [Stage 4: Report]   ← always runs
-   violation_assessments.json ──► final_report.html
-      │
-      ▼
- [Stage 5: Metrics]  ← always runs (non-fatal)
-   output_dir/ ──► LAFVT_metrics.json
-     Strategy 1: autoup_metrics.jsonl (LAFVT structure)
-     Strategy 2: *.jsonl recursive fallback
-      │
-      ▼
-   Open final_report.html
+```mermaid
+flowchart TD
+    IN(["lafvt.py"])
+
+    subgraph Validate["Input Validation"]
+        V1["project_dir exists"]
+        V2["target_directory is subdir"]
+        V3["OPENAI_API_KEY resolved"]
+    end
+
+    subgraph S1["Stage 1 — Analyzer"]
+        S1A["analyze(target_dir)"]
+        S1B["select(N)"]
+        S1A --> S1B
+    end
+    FA[/"lizard_analysis.csv"/]
+    FM[/"analysis_manifest.csv"/]
+    S1A -. writes .-> FA
+    S1B -. writes .-> FM
+
+    GATE2{"--skip-proof?"}
+
+    subgraph S2["Stage 2 — Proofer"]
+        S2A["run_parallel()"]
+        S2B["j × Popen workers"]
+        CTRLC(["Ctrl+C"])
+        S2KILL["cancel_all()<br/>SIGTERM → SIGKILL<br/>exit 1"]
+        S2A --> S2B
+        CTRLC -.->|"interrupt"| S2KILL
+    end
+    FART[/"&lt;slug&gt;/&lt;func&gt;/<br/>autoup_metrics.jsonl<br/>violation.json<br/>execution.log"/]
+    S2B -. writes .-> FART
+
+    GATE3{"--skip-review?"}
+
+    subgraph S3["Stage 3 — Review"]
+        S3A["review()"]
+    end
+    FASS[/"violation_assessments.json<br/>validation_summary.json"/]
+    S3A -. writes .-> FASS
+
+    subgraph S4["Stage 4 — Report"]
+        S4A["generate()"]
+    end
+    FHTML[/"final_report.html"/]
+    S4A -. writes .-> FHTML
+
+    subgraph S5["Stage 5 — Metrics (non-fatal)"]
+        S5A{"manifest<br/>present?"}
+        S5B["LOC from manifest"]
+        S5C["LOC via Lizard scan"]
+        S5D["MetricsCalculator<br/>.calculate()"]
+        S5A -- "yes" --> S5B --> S5D
+        S5A -- "no" --> S5C --> S5D
+    end
+    FJSON[/"LAFVT_metrics.json"/]
+    S5D -. writes .-> FJSON
+
+    IN --> Validate --> S1
+    S1 --> GATE2
+    GATE2 -- "no" --> S2
+    GATE2 -- "yes" --> GATE3
+    S2 --> GATE3
+    GATE3 -- "no" --> S3
+    GATE3 -- "yes" --> S4
+    S3 --> S4
+    S4 --> S5
 ```
 
 ---
