@@ -42,7 +42,7 @@ _AUTOUP_ROOT = _REPO_ROOT / "AutoUP"
 _DEFAULT_ALGORITHM = "lizard"
 _DEFAULT_SELECTOR = "top_N"
 _DEFAULT_LLM_MODEL = "gpt-5.2"
-_DEFAULT_J = 10
+_DEFAULT_J = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
 
 # ---------------------------------------------------------------------------
 # Logging helpers
