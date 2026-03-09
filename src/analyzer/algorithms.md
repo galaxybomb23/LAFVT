@@ -11,13 +11,18 @@ flowchart TD
         CLI["CLI / Python API"] --> A["Analyzer._algorithm.analyze()"]
         A --> CSV1["&lt;algorithm&gt;_analysis.csv"]
         CSV1 --> S["Analyzer._selector.select()"]
-        S --> CSV2["selected_functions.csv"]
+        S --> INTERM{"Post-selector\nconfigured?"}
+        INTERM -->|No| CSV2["selected_functions.csv"]
+        INTERM -->|Yes| SAVE["analyzer_interm.csv"]
+        SAVE --> PS["PostSelector.post_select()"]
+        PS --> CSV2
     end
 
     subgraph Registry["Plugin Registry (base.py)"]
         direction LR
         R1["@register_algorithm"] -.-> AREG[("_ALGORITHM_REGISTRY")]
         R2["@register_selector"] -.-> SREG[("_SELECTOR_REGISTRY")]
+        R3["@register_post_selector"] -.-> PREG[("_POST_SELECTOR_REGISTRY")]
     end
 
     Registry --> Analyzer
@@ -25,14 +30,15 @@ flowchart TD
 
 ### Plugin system
 
-All algorithms and selectors are autodiscovered via a decorator-based registry in `base.py`. Adding a new plugin requires no changes to the orchestrator — only creating the module, decorating the class, and adding an import to the package `__init__.py`.
+All algorithms, selectors, and post-selectors are autodiscovered via a decorator-based registry in `base.py`. Adding a new plugin requires no changes to the orchestrator — only creating the module, decorating the class, and adding an import to the package `__init__.py`.
 
 ## Output files
 
 | File | Columns | Description |
 |---|---|---|
 | `<algorithm>_analysis.csv` | `filepath`, `function_name`, + algorithm metrics | Full per-function analysis results |
-| `selected_functions.csv` | `filepath`, `function_name` | Functions chosen by the selector |
+| `selected_functions.csv` | `filepath`, `function_name` | Functions chosen by the selector (or post-selector) |
+| `analyzer_interm.csv` | `filepath`, `function_name` | Initial selection before post-selector expansion (only written when `--post-selector` is used) |
 
 `filepath` values are always **absolute** paths so they can be handed directly to downstream tools regardless of the working directory.
 
@@ -256,6 +262,75 @@ All selectors operate on the canonical `score` column produced by every algorith
 
 ---
 
+## Post-Selectors
+
+Post-selectors are an optional expansion step that runs **after** the initial selector. They take the selected function set and expand it — typically by tracing call-graph relationships to discover additional functions of interest.
+
+Add `--post-selector <name>` to any analyzer invocation. When a post-selector is active, the initial selection is saved as `analyzer_interm.csv` before expansion.
+
+```bash
+python -m analyzer <path/to/source> \
+    --algorithm lizard --selector top_N --threshold 5 \
+    --post-selector root_func_file
+```
+
+| Name | Flag | Description |
+|---|---|---|
+| Root Func File | `--post-selector root_func_file` | For each selected function, traces callers **within the same file** back to root callers (functions with no intra-file callers). |
+| Root Func Codebase | `--post-selector root_func_codebase` | Same approach but traces callers **across the entire codebase**, using BFS with targeted on-demand parsing. |
+
+### root_func_file
+
+For each selected function, parses its source file with libclang and walks the intra-file call graph backwards to find root callers — functions that are not called by any other function in the same file.
+
+#### Dataflow
+
+```mermaid
+flowchart LR
+    SEL["Initial Selection\n(filepath, function_name)"] --> GRP["Group by File"]
+    GRP --> PARSE["libclang\nParse File"]
+    PARSE --> CG["Intra-File\nCall Graph"]
+    CG --> BFS["BFS Backwards\nfrom Target"]
+    BFS --> ROOTS["Root Callers\n(no intra-file callers)"]
+    ROOTS --> MERGE["Merge with\nOriginal Selection"]
+    MERGE --> OUT["selected_functions.csv"]
+```
+
+**Example:** If function C is selected and within its file D calls C while A and B call D, then A and B are identified as root callers. The output contains A, B, **and** C.
+
+### root_func_codebase
+
+Same approach but traces callers across the entire codebase using targeted on-demand parsing. Only files that might contain callers are parsed (not the full source tree).
+
+#### Dataflow
+
+```mermaid
+flowchart TD
+    SEL["Initial Selection"] --> SEED["Seed targets"]
+    ANALYSIS["Full analysis_df\n(all discovered functions)"] --> INDEX["function_name →\nfile index"]
+
+    SEED --> BFS["BFS Loop\n(depth-capped at 3)"]
+    INDEX --> BFS
+
+    BFS --> PARSE["libclang\nParse candidate files\n(on-demand)"]
+    PARSE --> CALLERS["Discover callers\nacross files"]
+    CALLERS --> |"New callers\nfound?"| BFS
+    CALLERS --> |"No more\ncallers"| ROOTS["Identify true roots\n(no callers in result set)"]
+
+    ROOTS --> MERGE["Merge with\nOriginal Selection"]
+    MERGE --> OUT["selected_functions.csv"]
+```
+
+The BFS iteratively expands: at each depth level, newly discovered callers become the next set of targets. Parsing is cached, so files are never parsed twice.
+
+### Limitations
+
+- **Function pointers / indirect calls** — libclang's AST does not resolve calls through function pointers (e.g. `callback()`). Only direct `CALL_EXPR` nodes are traced.
+- **Include path resolution** — For cross-file call tracing, libclang may not resolve all `#include` directives without project-specific include paths. Intra-file tracing (`root_func_file`) is unaffected.
+
+
+---
+
 ## Adding a new algorithm
 
 1. Copy `algorithms/_template.py` to `algorithms/my_algo.py`
@@ -267,6 +342,14 @@ The new algorithm will be immediately available via `--algorithm my_algo` with n
 ## Adding a new selector
 
 Same process but inherit from `SelectorAlgorithm`, implement `select(df, N)`, use `@register_selector`, place the file under `selectors/`, and add the import to `selectors/__init__.py`.
+
+## Adding a new post-selector
+
+1. Create `selectors/post/my_post.py`
+2. Define a class inheriting from `PostSelectorAlgorithm` with `name = "my_post"`
+3. Implement `post_select(selected_df, analysis_df, source_root) → DataFrame`
+4. Decorate with `@register_post_selector`
+5. Add `from . import my_post` to `selectors/post/__init__.py`
 
 ## Using the Analyzer from Python
 

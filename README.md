@@ -89,6 +89,7 @@ python src/metrics_calculator.py <output_dir> \
 | `--project_dir` | Yes | — | Root directory of the C/C++ project to verify |
 | `--algorithm` | No | `lizard` | Static analysis algorithm (`lizard`, `loc`, `vccfinder`) |
 | `--selector` | No | `top_N` | Function selection strategy (`top_N`, `top_risk`, etc.) |
+| `--post-selector` | No | — | Optional post-selector for call-graph expansion (`root_func_file`, `root_func_codebase`) |
 | `--llm_model` | No | `gpt-5.2` | LLM model forwarded to AutoUP agents |
 | `--j` | No | `10` | Maximum number of parallel AutoUP prover workers |
 | `--OPENAI_API_KEY` | No | reads `.env` | Override the OpenAI API key |
@@ -107,6 +108,7 @@ The `OPENAI_API_KEY` is resolved in priority order: `--OPENAI_API_KEY` flag → 
 ├── timing_data.json             # per-stage wall-clock timings
 ├── LAFVT_metrics.json           # token usage, cost, timing summary (Stage 5)
 ├── lizard_analysis.csv          # full analyzer output
+├── analyzer_interm.csv          # pre-post-selector selection (only with --post-selector)
 ├── analysis_manifest.csv        # selected functions passed to the proofer
 ├── <file_slug>/<function>/      # per-function AutoUP artifacts
 │   ├── build/
@@ -205,7 +207,7 @@ Example codebase-level summary:
 
 ## Analyzer
 
-The Analyzer is a standalone, pluggable component that scans a C/C++ codebase, scores every function for vulnerability risk, and produces two CSV files consumed by the rest of the LAFVT pipeline. For in-depth algorithm descriptions, dataflow diagrams, output column references, and the VCCFinder SVM model details, see the [Analyzer README](src/analyzer/README.md).
+The Analyzer is a standalone, pluggable component that scans a C/C++ codebase, scores every function for vulnerability risk, and produces two CSV files consumed by the rest of the LAFVT pipeline. For in-depth algorithm descriptions, dataflow diagrams, output column references, and the VCCFinder SVM model details, see the [Analyzer documentation](src/analyzer/algorithms.md).
 
 ### Quick reference
 
@@ -222,6 +224,11 @@ The Analyzer is a standalone, pluggable component that scans a C/C++ codebase, s
 | First | `--selector first` | First function in output order |
 | Last | `--selector last` | Last function in output order |
 | All | `--selector all` | Every function |
+
+| Post-Selector | Flag | Summary |
+|---|---|---|
+| Root Func File | `--post-selector root_func_file` | Traces intra-file call graph backwards to root callers (functions with no in-file callers) |
+| Root Func Codebase | `--post-selector root_func_codebase` | Same approach but traces callers across the entire codebase (BFS with targeted on-demand parsing) |
 
 ### Running standalone
 
@@ -252,6 +259,7 @@ analyzer = Analyzer(
     project_root=Path("./output"),
     algorithm="lizard",
     selector="top_N",
+    post_selector="root_func_file",  # optional
 )
 
 # Phase 1 — writes lizard_analysis.csv to output/
