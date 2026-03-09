@@ -87,7 +87,7 @@ python src/metrics_calculator.py <output_dir> \
 | Argument | Required | Default | Description |
 |---|---|---|---|
 | `--project_dir` | Yes | — | Root directory of the C/C++ project to verify |
-| `--algorithm` | No | `lizard` | Static analysis algorithm (`lizard`, `loc`) |
+| `--algorithm` | No | `lizard` | Static analysis algorithm (`lizard`, `loc`, `vccfinder`) |
 | `--selector` | No | `top_N` | Function selection strategy (`top_N`, `top_risk`, etc.) |
 | `--llm_model` | No | `gpt-5.2` | LLM model forwarded to AutoUP agents |
 | `--j` | No | `10` | Maximum number of parallel AutoUP prover workers |
@@ -205,16 +205,23 @@ Example codebase-level summary:
 
 ## Analyzer
 
-The Analyzer is a standalone, pluggable component that scans a C/C++ codebase, scores every function for vulnerability risk, and produces two CSV files consumed by the rest of the LAFVT pipeline.
+The Analyzer is a standalone, pluggable component that scans a C/C++ codebase, scores every function for vulnerability risk, and produces two CSV files consumed by the rest of the LAFVT pipeline. For in-depth algorithm descriptions, dataflow diagrams, output column references, and the VCCFinder SVM model details, see the [Analyzer README](src/analyzer/README.md).
 
-### Output files
+### Quick reference
 
-| File | Columns | Description |
+| Algorithm | Flag | Summary |
 |---|---|---|
-| `<algorithm>_analysis.csv` | `filepath`, `function_name`, + algorithm metrics | Full per-function analysis results |
-| `selected_functions.csv` | `filepath`, `function_name` | Functions chosen by the selector |
+| Lizard | `--algorithm lizard` | Cyclomatic complexity, nesting, params, line count — normalised within quantile bins |
+| LOC | `--algorithm loc` | Raw line count normalised to [0, 1] |
+| VCCFinder | `--algorithm vccfinder` | Git-history mining + LinearSVC classification (offline, no GPU) |
 
-`filepath` values are always **absolute** paths so they can be handed directly to downstream tools regardless of the working directory.
+| Selector | Flag | Summary |
+|---|---|---|
+| Top N | `--selector top_N` | Top-N by descending `score` |
+| Bottom N | `--selector bottom_N` | Bottom-N by ascending `score` |
+| First | `--selector first` | First function in output order |
+| Last | `--selector last` | Last function in output order |
+| All | `--selector all` | Every function |
 
 ### Running standalone
 
@@ -226,7 +233,7 @@ python -m analyzer <path/to/source>
 
 # Explicit options
 python -m analyzer <path/to/source> \
-    --algorithm lizard \
+    --algorithm vccfinder \
     --selector top_N \
     --threshold 5 \
     --output-dir ./output
@@ -234,39 +241,6 @@ python -m analyzer <path/to/source> \
 # See all options
 python -m analyzer --help
 ```
-
-### Algorithms
-
-Currently implemented:
-
-| Name | Flag | Description |
-|---|---|---|
-| Lizard | `--algorithm lizard` | Computes cyclomatic complexity, nesting depth, parameter count, and line count per function. Metrics are normalised within complexity bins; `score` is the sum of the three normalised values (higher = higher risk). |
-| LOC | `--algorithm loc` | Scores functions by raw line count, normalised to [0, 1] across the codebase. The longest function scores 1.0. Simple and fast. |
-
-### Selectors
-
-All selectors operate on the canonical `score` column produced by every algorithm.  `N` accepts either an integer (e.g. `5`) or a percentage string (e.g. `10%`).
-
-| Name | Flag | Description |
-|---|---|---|
-| Top N | `--selector top_N` | Top-N functions by descending `score` (use `--threshold` to set N) |
-| Bottom N | `--selector bottom_N` | Bottom-N functions by ascending `score` (use `--threshold` to set N) |
-| First | `--selector first` | First function in analysis output order |
-| Last | `--selector last` | Last function in analysis output order |
-| All | `--selector all` | Every function, no filtering |
-
-### Adding a new algorithm
-
-1. Copy `src/analyzer/algorithms/_template.py` to `src/analyzer/algorithms/my_algo.py`
-2. Set `name = "my_algo"` and implement the `analyze(root_directory)` method — return a `DataFrame` with at minimum `filepath` and `function_name` columns
-3. Add `from . import my_algo` to `src/analyzer/algorithms/__init__.py`
-
-The new algorithm will be immediately available via `--algorithm my_algo` with no other changes required.
-
-### Adding a new selector
-
-Same process but inherit from `SelectorAlgorithm`, implement `select(df, N)`, use `@register_selector`, place the file under `src/analyzer/selectors/`, and add the import to `src/analyzer/selectors/__init__.py`.
 
 ### Using the Analyzer from Python
 

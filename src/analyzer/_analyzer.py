@@ -185,7 +185,7 @@ class Analyzer:
 
         csv_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Running '%s' selector (N=%d)", self._selector.name, N)
+        logger.info("Running '%s' selector (N=%s)", self._selector.name, N)
         selected_df = self._selector.select(self._analysis_df, N=N)
 
         selected_df.to_csv(csv_path, index=False)
@@ -259,6 +259,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # ── Configure logging to stdout when run standalone ───────────
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    # Suppress noisy per-commit messages from PyDriller
+    logging.getLogger("pydriller").setLevel(logging.WARNING)
+
     root_dir = Path(args.directory)
     if not root_dir.is_dir():
         logger.error("Not a directory: %s", root_dir)
@@ -266,16 +275,31 @@ def main() -> int:
 
     output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
 
+    logger.info(
+        "Analyzer starting  [algorithm=%s, selector=%s, threshold=%s]",
+        args.algorithm, args.selector, args.threshold,
+    )
+    t_total = time.perf_counter()
+
     analyzer = Analyzer(
         project_root=output_dir,
         algorithm=args.algorithm,
         selector=args.selector,
     )
 
+    # ── Phase 1: Analysis ─────────────────────────────────────────
+    t0 = time.perf_counter()
     analysis_csv = analyzer.analyze(root_dir, output_dir=output_dir)
+    t_analysis = time.perf_counter() - t0
     print(f"Analysis CSV: {analysis_csv}")
+    logger.info("Phase 1 (analysis) completed in %.2fs", t_analysis)
 
+    # ── Phase 2: Selection ────────────────────────────────────────
+    t0 = time.perf_counter()
     selected = analyzer.select(N=args.threshold, output_dir=output_dir)
+    t_select = time.perf_counter() - t0
+    logger.info("Phase 2 (selection) completed in %.2fs", t_select)
+
     if selected:
         print(f"\nSelected {len(selected)} functions:")
         for i, func in enumerate(selected, 1):
@@ -288,6 +312,12 @@ def main() -> int:
             )
     else:
         print("No functions selected.")
+
+    t_total_elapsed = time.perf_counter() - t_total
+    logger.info(
+        "Analyzer finished in %.2fs  (analysis=%.2fs, selection=%.2fs)",
+        t_total_elapsed, t_analysis, t_select,
+    )
 
     return 0
 
