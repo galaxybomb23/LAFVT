@@ -82,18 +82,47 @@
     "complexity_score": 40,
     "vulnerability_score": 79,
     "rank_in_bin": "5/5"
+  },
+  {
+    "function": "uri_parser_process",
+    "complexity_score": 5,
+    "vulnerability_score": 31,
+    "rank_in_bin": "6/53"
+  },
+  {
+    "function": "base64_encode_base",
+    "complexity_score": 13,
+    "vulnerability_score": 60,
+    "rank_in_bin": "1/5"
+  },
+  {
+    "function": "clif_decode_link",
+    "complexity_score": 15,
+    "vulnerability_score": 59,
+    "rank_in_bin": "5/25"
+  },
+  {
+    "function": "clif_get_attr",
+    "complexity_score": 31,
+    "vulnerability_score": 152,
+    "rank_in_bin": "1/39"
+  },
+  {
+    "function": "_on_rd_init",
+    "complexity_score": 29,
+    "vulnerability_score": 90,
+    "rank_in_bin": "6/6"
+  },
+  {
+    "function": "_on_regack",
+    "complexity_score": 4,
+    "vulnerability_score": 48,
+    "rank_in_bin": "2/69"
+  },
+  {
+    "function": "_parse_advertise",
+    "complexity_score": 55,
+    "vulnerability_score": 164,
+    "rank_in_bin": "1/2"
   }
 ]
-_on_regack
-
-base64_encode_base
-
-clif_decode_link
-
-clif_get_attr
-
-uri_parser_process
-
-_on_rd_init
-
-_parse_advertise
