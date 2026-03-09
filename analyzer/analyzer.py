@@ -403,9 +403,9 @@ def visit_control_structure(cur, state: AnalysisState, loop_like: bool = False):
     # Control structures for V6/V7
     depth = len(state.control_stack) + 1
     state.fm.V7 = max(state.fm.V7, depth)
-    if depth > 1:
-        # count nested control structures; each level above contributes a pair
-        state.fm.V6 += depth - 1
+    #if depth > 1:
+    #    # count nested control structures; each level above contributes a pair
+    #    state.fm.V6 += depth - 1
 
     node = ControlNode(cur)
     if state.control_stack:
@@ -513,6 +513,11 @@ def analyze_function(func_cursor, tu_path: str) -> FunctionMetrics:
 
     for child in body.get_children():
         walk(child)
+
+    # Finalize V6: number of nested control-structure pairs
+    fm.V6 = 0
+    for node in state.all_control_nodes:
+        fm.V6 += count_descendants(node)
 
     # Finalize pointer metrics (V4, V5)
     fm.V4 = len([v for v, c in state.ptr_op_counts.items() if c > 0])

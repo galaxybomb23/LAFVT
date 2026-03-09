@@ -1,110 +1,99 @@
 [
   {
-    "function": "gcoap_dns_server_proxy_get",
-    "branch": "gcoap_dns_server_proxy_get",
-    "cve_id": "CVE-2024-32017",
-    "complexity_score": 2,
-    "vulnerability_score": 11,
-    "rank_in_bin": "35/130"
-  },
-  {
-    "function": "_parse_advertise",
-    "branch": "dhcp_parse_advertise",
-    "cve_id": "CVE-2024-52802",
-    "complexity_score": 52,
-    "vulnerability_score": 30,
-    "rank_in_bin": "1/2"
-  },
-  {
-    "function": "_gcoap_forward_proxy_copy_options",
-    "branch": "gcoap_forward_proxy_copy_options",
-    "cve_id": "CVE-2024-32017B",
-    "complexity_score": 12,
-    "vulnerability_score": 23,
-    "rank_in_bin": "2/10"
-  },
-  {
-    "function": "_on_rd_init",
-    "branch": "_on_rd_init",
-    "cve_id": "CVE-2024-31225",
-    "complexity_score": 17,
-    "vulnerability_score": 11,
-    "rank_in_bin": "9/9"
-  },
-  {
-    "function": "_rbuf_add",
-    "branch": "CVE-2023-33975-paschal",
-    "cve_id": [
-      "CVE-2023-33975",
-      "CVE-2023-24821"
-    ],
-    "complexity_score": 93,
-    "vulnerability_score": 42,
+    "function": "dns_msg_parse_reply",
+    "complexity_score": 61,
+    "vulnerability_score": 125,
     "rank_in_bin": "1/1"
   },
   {
-    "function": "_iphc_ipv6_encode",
-    "branch": "_iphc_ipv6_encode",
-    "cve_id": "CVE-2023-33973",
-    "complexity_score": 60,
-    "vulnerability_score": 38,
-    "rank_in_bin": "1/1"
-  },
-  {
-    "function": "gnrc_sixlowpan_frag_sfr_send",
-    "branch": "gnrc_sixlowpan_frag_sfr_send",
-    "cve_id": "CVE-2023-24826",
-    "complexity_score": 40,
-    "vulnerability_score": 37,
-    "rank_in_bin": "1/1"
-  },
-  {
-    "function": "gnrc_rpl_srh_process",
-    "branch": "gnrc_rpl_srh_process",
-    "cve_id": "CVE-2023-24817",
+    "function": "gnrc_rpl_recv_DAO",
     "complexity_score": 33,
-    "vulnerability_score": 33,
-    "rank_in_bin": "1/2"
+    "vulnerability_score": 115,
+    "rank_in_bin": "3/10"
   },
   {
-    "function": "_iphc_encode",
-    "branch": [
-      "CVE-2023-24823",
-      "CVE-2023-24822"
-    ],
-    "cve_id": [
-      "CVE-2023-24823",
-      "CVE-2023-24822"
-    ],
-    "complexity_score": 38,
-    "vulnerability_score": 23,
-    "rank_in_bin": "1/2"
+    "function": "gnrc_rpl_validation_options",
+    "complexity_score": 96,
+    "vulnerability_score": 303,
+    "rank_in_bin": "1/1"
   },
   {
-    "function": "_rbuf_add",
-    "branch": "CVE-2023-33975-paschal",
-    "cve_id": "CVE-2023-24825",
-    "complexity_score": 93,
-    "vulnerability_score": 42,
+    "function": "_parse_options",
+    "complexity_score": 153,
+    "vulnerability_score": 544,
     "rank_in_bin": "1/1"
   },
   {
     "function": "gnrc_sixlowpan_iphc_recv",
-    "branch": "gnrc_sixlowpan_iphc_recv",
-    "cve_id": [
-      "CVE-2023-24820",
-      "CVE-2023-24819"
-    ],
-    "complexity_score": 104,
-    "vulnerability_score": 34,
+    "complexity_score": 177,
+    "vulnerability_score": 480,
     "rank_in_bin": "1/1"
   },
   {
-    "function": "dns_msg_parse_reply",
-    "branch": "dns_msg_parse_reply",
-    "cve_id": "CVE-2021-31664",
-    "complexity_score": 49,
-    "vulnerability_score": 27,
+    "function": "_rbuf_add",
+    "complexity_score": 134,
+    "vulnerability_score": 404,
     "rank_in_bin": "1/1"
+  },
+  {
+    "function": "_iphc_encode",
+    "complexity_score": 147,
+    "vulnerability_score": 147,
+    "rank_in_bin": "1/1"
+  },
+  {
+    "function": "_iphc_ipv6_encode",
+    "complexity_score": 81,
+    "vulnerability_score": 547,
+    "rank_in_bin": "1/1"
+  },
+  {
+    "function": "gnrc_sixlowpan_frag_sfr_send",
+    "complexity_score": 67,
+    "vulnerability_score": 205,
+    "rank_in_bin": "1/2"
+  },
+  {
+    "function": "gnrc_rpl_srh_process",
+    "complexity_score": 58,
+    "vulnerability_score": 165,
+    "rank_in_bin": "1/1"
+  },
+  {
+    "function": "gcoap_dns_server_proxy_get",
+    "complexity_score": 3,
+    "vulnerability_score": 18,
+    "rank_in_bin": "43/141"
+  },
+  {
+    "function": "_gcoap_forward_proxy_copy_options",
+    "complexity_score": 13,
+    "vulnerability_score": 83,
+    "rank_in_bin": "2/15"
+  },
+  {
+    "function": "_receive",
+    "complexity_score": 163,
+    "vulnerability_score": 355,
+    "rank_in_bin": "1/2"
+  },
+  {
+    "function": "emcute_run",
+    "complexity_score": 40,
+    "vulnerability_score": 79,
+    "rank_in_bin": "5/5"
   }
 ]
+_on_regack
+
+base64_encode_base
+
+clif_decode_link
+
+clif_get_attr
+
+uri_parser_process
+
+_on_rd_init
+
+_parse_advertise
