@@ -2,16 +2,17 @@
 """
 Fix Suggester
 =============
-Standalone script to generate fix suggestions for bugs identified in violation assessments.
+Generate fix suggestions for bugs identified in violation assessments.
 
 Usage:
-    python src/fix_suggester.py --output_dir <path> --project_dir <path> [--limit N]
+    python src/fix_suggester.py --output_dir <path> --project_dir <path> --target_func <func> --target_precon <precon>
 """
 
 import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -25,6 +26,7 @@ sys.path.append(str(_AUTOUP_ROOT / "src"))
 import dotenv
 import requests
 from pydantic import BaseModel, Field
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Output Schema
@@ -34,6 +36,7 @@ class FixSuggestion(BaseModel):
     is_fixable: bool = Field(description="Whether the bug can be reasonably fixed given the context.")
     explanation: str = Field(description="A brief explanation of why the proposed fix resolves the violation, or why it cannot be fixed.")
     suggested_code_diff: str = Field(description="The proposed code changes in standard diff format (or exactly what to replace). Leave empty if not fixable.")
+    extra_changes_required: Optional[str] = Field(default=None, description="A text explanation of any extra changes required (e.g., updating header files or callers) to make the code compile.")
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -42,20 +45,23 @@ class FixSuggestion(BaseModel):
 def _setup_logging(log_file: Path) -> logging.Logger:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     fmt = logging.Formatter(fmt="%(asctime)s  %(levelname)-8s  [%(name)s]  %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG)
+    
+    logger = logging.getLogger("fix_suggester")
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
 
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.INFO)
-    ch.setFormatter(fmt)
-    root.addHandler(ch)
+    if not logger.handlers:
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setLevel(logging.INFO)
+        ch.setFormatter(fmt)
+        logger.addHandler(ch)
 
-    fh = logging.FileHandler(log_file, encoding="utf-8")
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(fmt)
-    root.addHandler(fh)
+        fh = logging.FileHandler(log_file, encoding="utf-8")
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
 
-    return logging.getLogger(__name__)
+    return logger
 
 # ---------------------------------------------------------------------------
 # LLM Wrapper
@@ -64,9 +70,9 @@ def _setup_logging(log_file: Path) -> logging.Logger:
 class SuggesterLLM:
     def __init__(self, model_name: str):
         self.model_name = model_name
-        self.url = "https://genai.rcac.purdue.edu/api/chat/completions"
+        self.url = "https://api.openai.com/v1/chat/completions"
 
-    def generate_fix(self, prompt: str, target_func: str, logger: logging.Logger) -> FixSuggestion:
+    def generate_fix(self, prompt: str, target_func: str, logger: logging.Logger) -> tuple[FixSuggestion, dict]:
         system_msg_path = _REPO_ROOT / "prompts" / "fix_suggester_system.prompt"
         system_msg = system_msg_path.read_text(encoding="utf-8")
         
@@ -76,7 +82,7 @@ class SuggesterLLM:
         }
         
         body = {
-            "model": self.model_name.replace("openai/", ""), # Strip openai/ if it's still there
+            "model": self.model_name,
             "messages": [
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": prompt}
@@ -91,11 +97,16 @@ class SuggesterLLM:
         data = response.json()
         
         usage = data.get("usage", {})
-        prompt_tokens = usage.get("prompt_tokens", 0)
-        completion_tokens = usage.get("completion_tokens", 0)
-        total_tokens = usage.get("total_tokens", 0)
+        completion_detail = usage.get("completion_tokens_details", {})
+        token_usage = {
+            "input_tokens":     usage.get("prompt_tokens", 0),
+            "cached_tokens":    usage.get("prompt_tokens_details", {}).get("cached_tokens", 0),
+            "output_tokens":    usage.get("completion_tokens", 0),
+            "reasoning_tokens": completion_detail.get("reasoning_tokens", 0),
+            "total_tokens":     usage.get("total_tokens", 0),
+        }
         
-        logger.debug(f"Target function [{target_func}] Token Usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {total_tokens}")
+        logger.info("Target function [%s] token_usage: %s", target_func, json.dumps(token_usage))
         
         content = data["choices"][0]["message"]["content"]
         
@@ -104,13 +115,12 @@ class SuggesterLLM:
         
         # Heuristic fix for LLMs that hallucinate string concatenation inside the JSON
         # It replaces occurrences like: " ... " + "\n" + " ... " with standard newlines inside a single string
-        import re
         content = re.sub(r'"\s*\+\s*"\n"\s*\+\s*"', r'\\n', content)
         content = re.sub(r'"\s*\+\s*"', r'', content)
         
         try:
             parsed_json = json.loads(content)
-            return FixSuggestion(**parsed_json)
+            return FixSuggestion(**parsed_json), token_usage
         except Exception as e:
             raise RuntimeError(f"Failed to parse LLM response as JSON. Response: {content}\nError: {e}")
 
@@ -134,11 +144,10 @@ class FixSuggester:
         try:
             return path.read_text(encoding="utf-8")
         except Exception as e:
-            self.log.error(f"Failed to read file {path}: {e}")
+            self.log.error("Failed to read file %s: %s", path, e)
             return ""
 
     def _extract_c_context(self, source_code: str, func_name: str, call_trace: str) -> str:
-        import re
         # Find the function signature heuristically
         pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_\s\*]*\b' + re.escape(func_name) + r'\b\s*\([^)]*\)\s*\{', re.MULTILINE)
         match = pattern.search(source_code)
@@ -196,8 +205,7 @@ class FixSuggester:
             call_trace=call_trace
         )
 
-    def run(self, limit: int = None, min_threat: int = 1):
-        import re
+    def run(self, target_func: str, target_precon: str):
         # Attempt to extract the codebase name from the end of the output_dir folder name
         # e.g., output-2026-01-24_16-32-18-RIOT -> RIOT
         match = re.search(r'-([A-Za-z0-9_]+)$', self.output_dir.name)
@@ -212,108 +220,118 @@ class FixSuggester:
                 break
 
         if not assessments_file.exists():
-            self.log.error(f"Cannot find violation assessments file in {self.output_dir}")
-            return
+            self.log.error("Cannot find violation assessments file in %s", self.output_dir)
+            return []
 
-        self.log.info(f"Loading assessments from {assessments_file}")
+        self.log.info("Loading assessments from %s", assessments_file)
         with open(assessments_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         assessments = data.get("Sorted Assessments", [])
-        buggy_assessments = [a for a in assessments if a.get("LLM Review", {}).get("Threat Score", -1) >= min_threat]
         
-        self.log.info(f"Found {len(buggy_assessments)} buggy assessments.")
+        # Find the single target assessment
+        target_assessments = [
+            a for a in assessments 
+            if a.get("Target Function") == target_func and a.get("Precondition") == target_precon
+        ]
         
-        if limit:
-            buggy_assessments = buggy_assessments[:limit]
-            self.log.info(f"Limiting to {limit} assessments for this run.")
+        if not target_assessments:
+            self.log.error("Could not find assessment for function '%s' and precondition '%s'", target_func, target_precon)
+            # Log all available functions and preconditions for debugging
+            available = [(a.get("Target Function"), a.get("Precondition")) for a in assessments[:5]]
+            self.log.error("Sample available assessments: %s", available)
+            return []
+            
+        self.log.info("Found %d match(es): %s with precondition: %s", len(target_assessments), target_func, target_precon)
 
         results = []
 
-        import time
         last_request_time = 0.0
         request_delay = 60.0 / 20.0  # 3 seconds per request
 
-
-        for item in buggy_assessments:
-            target_func = item.get("Target Function")
+        for item in target_assessments:
+            func_name = item.get("Target Function")
             original_source_path = item.get("Source File", "")
             precondition = item.get("Precondition", "")
             assessment_data = item.get("Violation Assessment", {})
             reasoning = assessment_data.get("Reasoning", "")
 
-            self.log.info(f"Processing target function: {target_func}")
-
+            self.log.info("Processing target function: %s", func_name)
 
             # Extract Call Trace
             llm_review = item.get("LLM Review", {})
             call_trace_list = llm_review.get("Call Trace", [])
             call_trace = "\n".join(call_trace_list) if call_trace_list else "Call trace not available."
             
-            # Map source path
+            # Map source path — search for the file by name under project_dir
             source_content = "Source code not found."
-            # Attempt to strip the codebase name prefix from the absolute path to map it locally
-            prefix = f"{codebase_name}/"
-            if prefix in original_source_path:
-                rel_path = original_source_path.split(prefix, 1)[-1]
-                local_source_path = self.project_dir / rel_path
-                if local_source_path.exists():
-                    full_source = self._read_file(local_source_path)
-                    source_content = self._extract_c_context(full_source, target_func, call_trace)
-                else:
-                    self.log.warning(f"Could not find local source for {original_source_path} at {local_source_path}")
+            source_filename = Path(original_source_path).name  # e.g., "cache.c"
+            local_matches = list(self.project_dir.rglob(source_filename))
+            if local_matches:
+                local_source_path = local_matches[0]  # Use first match
+                if len(local_matches) > 1:
+                    self.log.debug("Multiple matches for %s, using: %s", source_filename, local_source_path)
+                full_source = self._read_file(local_source_path)
+                source_content = self._extract_c_context(full_source, func_name, call_trace)
+            else:
+                self.log.warning("Could not find %s anywhere under %s", source_filename, self.project_dir)
 
-            prompt = self._create_prompt(target_func, original_source_path, precondition, reasoning, source_content, call_trace)
+            prompt = self._create_prompt(func_name, original_source_path, precondition, reasoning, source_content, call_trace)
             
             try:
-                self.log.info(f"Requesting fix suggestion from LLM for {target_func}...")
+                self.log.info("Requesting fix suggestion from LLM for %s...", func_name)
                 
                 # API Rate Limiter
                 elapsed = time.time() - last_request_time
                 if elapsed < request_delay:
                     time.sleep(request_delay - elapsed)
                 
-                suggestion = self.suggester.generate_fix(prompt, target_func, self.log)
+                suggestion, token_usage = self.suggester.generate_fix(prompt, func_name, self.log)
                 last_request_time = time.time()
                 
                 result_item = {
-                    "Target Function": target_func,
+                    "Target Function": func_name,
                     "Source File": original_source_path,
                     "Violated Precondition": precondition,
-                    "Fix Suggestion": suggestion.model_dump()
+                    "Fix Suggestion": suggestion.model_dump(),
+                    "Token Usage": token_usage,
                 }
                 results.append(result_item)
-                self.log.info(f"Successfully generated suggestion for {target_func}")
+                self.log.info("Successfully generated suggestion for %s", func_name)
 
             except Exception as e:
-                self.log.error(f"Failed to generate suggestion for {target_func}: {e}")
+                self.log.error("Failed to generate suggestion for %s: %s", func_name, e)
 
+        # Save results to JSON (overwrite with current run only)
         out_file = self.fix_suggestions_dir / "fix_suggestions.json"
         
-        # Sort results to match the order in the original 'buggy_assessments' list
-        # using the target function and source file to map them back
-        ordered_results = []
-        result_map = {(r["Target Function"], r["Source File"]): r for r in results}
-        
-        for item in buggy_assessments:
-            key = (item.get("Target Function"), item.get("Source File", ""))
-            if key in result_map:
-                ordered_results.append(result_map[key])
-        
         with open(out_file, "w", encoding="utf-8") as f:
-            json.dump(ordered_results, f, indent=4)
+            json.dump(results, f, indent=4)
         
-        self.log.info(f"Saved {len(ordered_results)} ordered fix suggestions to {out_file}")
+        self.log.info("Saved %d fix suggestion(s) to %s", len(results), out_file)
+
+        # Append to history log with timestamp
+        history_file = self.fix_suggestions_dir / "fix_suggestions_history.jsonl"
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        with open(history_file, "a", encoding="utf-8") as f:
+            for result in results:
+                entry = {"timestamp": timestamp, **result}
+                f.write(json.dumps(entry) + "\n")
+        
+        self.log.info("Appended %d entry(ies) to %s", len(results), history_file)
+        
+        # Return the newly generated suggestions
+        return results
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate fix suggestions for confirmed bugs.")
     parser.add_argument("--output_dir", required=True, help="Path to the directory containing violation assessments and harnesses.")
     parser.add_argument("--project_dir", required=True, help="Root directory of the project (e.g., RIOT folder).")
-    parser.add_argument("--llm_model", default="llama4:latest", help="LLM model to use (default: llama4:latest on GenAI).")
-    parser.add_argument("--limit", type=int, default=None, help="Limit the number of suggestions to generate (for testing).")
-    parser.add_argument("--min_threat", type=int, default=1, help="Minimum threat score to consider for generating fixes (default: 1).")
-    parser.add_argument("--GENAI_API_KEY", default=None, help="Purdue GenAI API key.")
+    parser.add_argument("--target_func", required=True, help="Target function to generate a fix for.")
+    parser.add_argument("--target_precon", required=True, help="Precondition that was violated.")
+    parser.add_argument("--llm_model", default="gpt-5.2", help="LLM model to use (default: gpt-5.2).")
+    parser.add_argument("--OPENAI_API_KEY", default=None, help="OpenAI API key.")
     
     args = parser.parse_args()
 
@@ -325,21 +343,25 @@ def main():
     log = _setup_logging(fix_suggestions_dir / "fix_suggester.log")
 
     # Handle API Key
-    api_key = args.GENAI_API_KEY
+    api_key = args.OPENAI_API_KEY
     if not api_key:
         env_file = _REPO_ROOT / ".env"
-        api_key = dotenv.get_key(str(env_file), "GENAI_API_KEY") if env_file.exists() else None
+        api_key = dotenv.get_key(str(env_file), "OPENAI_API_KEY") if env_file.exists() else None
     if not api_key:
-        api_key = os.getenv("GENAI_API_KEY")
+        api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        log.error("No GENAI_API_KEY found in args, environment, or .env.")
+        log.error("No OPENAI_API_KEY found in args, environment, or .env.")
         return 1
         
-    # LiteLLM's openai/ provider checks OPENAI_API_KEY, so we map it over
     os.environ["OPENAI_API_KEY"] = api_key
 
-    suggester = FixSuggester(output_dir=output_dir, project_dir=project_dir, llm_model=args.llm_model, log=log)
-    suggester.run(limit=args.limit, min_threat=args.min_threat)
+    suggester = FixSuggester(
+        output_dir=output_dir, 
+        project_dir=project_dir, 
+        llm_model=args.llm_model, 
+        log=log
+    )
+    suggester.run(target_func=args.target_func, target_precon=args.target_precon)
 
     return 0
 
