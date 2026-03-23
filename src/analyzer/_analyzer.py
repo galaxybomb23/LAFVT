@@ -35,8 +35,10 @@ import pandas as pd
 
 from analyzer.base import (
     get_algorithm,
+    get_post_selector,
     get_selector,
     list_algorithms,
+    list_post_selectors,
     list_selectors,
 )
 
@@ -71,15 +73,20 @@ class Analyzer:
         project_root: Path = Path("."),
         algorithm: str = "lizard",
         selector: str = "top_risk",
+        post_selector: Optional[str] = None,
     ) -> None:
         self.project_root = Path(project_root)
         self._algorithm = get_algorithm(algorithm)
         self._selector = get_selector(selector)
+        self._post_selector = get_post_selector(post_selector) if post_selector else None
         self._analysis_df: Optional[pd.DataFrame] = None
+        self._source_root: Optional[Path] = None
         logger.info(
-            "Initialised Analyzer [algorithm=%s, selector=%s, project_root=%s]",
+            "Initialised Analyzer [algorithm=%s, selector=%s, "
+            "post_selector=%s, project_root=%s]",
             self._algorithm.name,
             self._selector.name,
+            self._post_selector.name if self._post_selector else None,
             self.project_root,
         )
 
@@ -111,6 +118,8 @@ class Analyzer:
         directory = Path(directory)
         output_dir = Path(output_dir) if output_dir else self.project_root
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        self._source_root = directory.resolve()
 
         logger.info("Running '%s' analysis on: %s", self._algorithm.name, directory)
         t0 = time.perf_counter()
@@ -185,8 +194,26 @@ class Analyzer:
 
         csv_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Running '%s' selector (N=%d)", self._selector.name, N)
+        logger.info("Running '%s' selector (N=%s)", self._selector.name, N)
         selected_df = self._selector.select(self._analysis_df, N=N)
+
+        # ── Post-selector expansion ───────────────────────────────
+        if self._post_selector is not None:
+            # Save the initial selection as intermediate output
+            interm_path = csv_path.parent / "analyzer_interm.csv"
+            selected_df.to_csv(interm_path, index=False)
+            logger.info(
+                "Intermediate selection saved to: %s (%d functions)",
+                interm_path, len(selected_df),
+            )
+
+            source_root = self._source_root or self.project_root
+            logger.info(
+                "Running '%s' post-selector", self._post_selector.name,
+            )
+            selected_df = self._post_selector.post_select(
+                selected_df, self._analysis_df, source_root,
+            )
 
         selected_df.to_csv(csv_path, index=False)
         logger.info("Selection CSV saved to: %s", csv_path)
@@ -253,11 +280,26 @@ def main() -> int:
         help="Selector threshold: integer (e.g. 5) or percent (e.g. 10%%) (default: 10)",
     )
     parser.add_argument(
+        "--post-selector",
+        default=None,
+        choices=list_post_selectors() or None,
+        help="Optional post-selector to expand the initial selection (e.g. root_func_file)",
+    )
+    parser.add_argument(
         "--output-dir",
         default=None,
         help="Output directory for CSV files (default: current directory)",
     )
     args = parser.parse_args()
+
+    # ── Configure logging to stdout when run standalone ───────────
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    # Suppress noisy per-commit messages from PyDriller
+    logging.getLogger("pydriller").setLevel(logging.WARNING)
 
     root_dir = Path(args.directory)
     if not root_dir.is_dir():
@@ -266,16 +308,34 @@ def main() -> int:
 
     output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
 
+    logger.info(
+        "Analyzer starting  [algorithm=%s, selector=%s, threshold=%s, "
+        "post_selector=%s]",
+        args.algorithm, args.selector, args.threshold,
+        args.post_selector,
+    )
+    t_total = time.perf_counter()
+
     analyzer = Analyzer(
         project_root=output_dir,
         algorithm=args.algorithm,
         selector=args.selector,
+        post_selector=args.post_selector,
     )
 
+    # ── Phase 1: Analysis ─────────────────────────────────────────
+    t0 = time.perf_counter()
     analysis_csv = analyzer.analyze(root_dir, output_dir=output_dir)
+    t_analysis = time.perf_counter() - t0
     print(f"Analysis CSV: {analysis_csv}")
+    logger.info("Phase 1 (analysis) completed in %.2fs", t_analysis)
 
+    # ── Phase 2: Selection ────────────────────────────────────────
+    t0 = time.perf_counter()
     selected = analyzer.select(N=args.threshold, output_dir=output_dir)
+    t_select = time.perf_counter() - t0
+    logger.info("Phase 2 (selection) completed in %.2fs", t_select)
+
     if selected:
         print(f"\nSelected {len(selected)} functions:")
         for i, func in enumerate(selected, 1):
@@ -288,6 +348,12 @@ def main() -> int:
             )
     else:
         print("No functions selected.")
+
+    t_total_elapsed = time.perf_counter() - t_total
+    logger.info(
+        "Analyzer finished in %.2fs  (analysis=%.2fs, selection+post=%.2fs)",
+        t_total_elapsed, t_analysis, t_select,
+    )
 
     return 0
 
