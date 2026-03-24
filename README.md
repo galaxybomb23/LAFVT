@@ -82,6 +82,15 @@ python src/metrics_calculator.py <output_dir> \
     [--source_dir <path/to/source>]
 ```
 
+**Stage 6 — Interactive Report Server** (also runs automatically at end of full pipeline)
+```bash
+python src/server.py \
+    --output_dir lafvt_output \
+    --project_dir <path/to/project> \
+    --llm_model gpt-5.2 \
+    --lafvt_log lafvt.log
+```
+
 ### Arguments
 
 | Argument | Required | Default | Description |
@@ -96,6 +105,7 @@ python src/metrics_calculator.py <output_dir> \
 | `--target_directory` | No | `project_dir` | Restrict analysis to this subdirectory (must be inside `project_dir`) |
 | `--skip-proof` | No | `False` | Skip Stage 2 (AutoUP); go straight to Review + Report assuming output dir is already populated |
 | `--skip-review` | No | `False` | Skip Stage 3 (Review); go straight to Report assuming `violation_assessments.json` already exists |
+| `--skip-metrics` | No | `False` | Skip Stage 5 (Metrics); go straight to Interactive Report Server with Fix Suggestions |
 | `--demo` | No | `False` | Pause after each stage and print a brief summary before continuing |
 
 The `OPENAI_API_KEY` is resolved in priority order: `--OPENAI_API_KEY` flag → `.env` file at the repo root → shell environment variable.
@@ -115,6 +125,10 @@ The `OPENAI_API_KEY` is resolved in priority order: `--OPENAI_API_KEY` flag → 
 │   ├── autoup_metrics.jsonl
 │   ├── violation.json
 │   └── execution.log
+├── fix_suggestions/                 
+│   ├── fix_suggestions.json          # most recent (single) fix suggestion LLM response
+|   ├── fix_suggestions_history.jsonl # fix suggestion LLM response history
+|   └── fix_suggester_server.log      # fix suggestion server log
 ├── violation_assessments.json   # scored review output
 ├── validation_summary.json      # global rollup
 └── final_report.html            # interactive HTML report
@@ -272,6 +286,66 @@ for func in selected:
     print(func["function_name"], func["filepath"])
 ```
 
+## Report Generator
+
+The report generator turns `*violation_assessments.json` into an interactive HTML report for triage:
+
+- `src/report_generator.py` renders a single-page report with threat-score charts, and per-violation expandable cards (metadata, reasoning, and relevant artifacts).
+- `src/server.py` serves the report locally by generating HTML dynamically from the `violation_assessments.json` currently in `--output_dir` 
+- The UI includes quick search plus a theme toggle; the server also exposes `/api/shutdown` (wired to the "Stop Server" button) and writes `server.pid` into the output directory for external shutdown.
+
+#### Running the Server Standalone
+
+  ```bash
+    python src/server.py \
+    --output_dir lafvt_output \
+    --project_dir  <path/to/project> \
+    [--llm_model gpt-5.2]
+```
+
+### On-demand Fix Suggestions
+
+The interactive report contains a **Generate Code Fix** button on each violation. When clicked, it calls `/api/suggest_fix` which makes an API call to an LLM for a suggested code fix, streams the LLM result back into the card, and writes JSON to `lafvt_output/fix_suggestions/`.
+
+- Requires `OPENAI_API_KEY` (from CLI flag, `.env`, or environment) plus read access to the original source tree via `--project_dir`.
+
+#### Running Fix Suggestion Standalone
+
+Run the same logic from the CLI if you want a single suggestion without the server:
+  ```bash
+  python src/fix_suggester.py \
+      --output_dir lafvt_output \
+      --project_dir <path/to/project> \
+      --target_func <function_name> \
+      --target_precon "<violated_precondition>" \
+      [--llm_model gpt-5.2]
+  ```
+
+#### LLM Response Structure
+
+Each entry in the output JSON contains:
+- **Target Function**: The name of the function where the violation was found.
+- **Source File**: The path to the original source file.
+- **Violated Precondition**: The specific precondition or assertion that failed.
+- **Fix Suggestion**: The LLM output parsed as JSON, including:
+  - `is_fixable` (boolean): Whether the LLM determined the bug could be reasonably fixed given the context.
+  - `explanation` (string): A brief explanation of why the proposed fix resolves the violation.
+  - `suggested_code_diff` (string): The suggested code changes in standard diff format.
+  - `extra_changes_required` (string): Specifies code changes that may need to be made in other functions/headers/file due to the suggested code changes in the C source code.
+- **Token Usage**: Specifies token usage, split by the type of tokens.
+    - `input_tokens`: Number of tokens in the input prompt
+    - `cached_tokens`: Number of tokens retrieved from cache
+    - `output_tokens`: Number of tokens generated in the model's response
+    - `reasoning_tokens`: Number of tokens used during internal reasoning/thinking process
+    - `total_tokens`: Sum of all tokens consumed in the API call
+
+#### Output Files
+
+| File | Description |
+|---|---|
+| `fix_suggestions.json` | Most recent fix suggestion LLM response |
+| `fix_suggestions_history.jsonl` | Append-only history of all fix suggestion LLM responses |
+| `fix_suggester_server.log` | Server log for fix suggestion requests |
 
 ## Run Metrics Script
 

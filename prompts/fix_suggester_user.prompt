@@ -1,0 +1,29 @@
+A formal verification tool has identified a genuine bug in the target function.
+Please analyze the provided context and suggest a minimal code fix to resolve the bug in the source code.
+
+## Violation Details
+
+- **Target Function**: `{target_function}`
+- **Source File Location**: `{source_file_path}`
+- **Violated Precondition**: `{precondition}`
+- **Verification Reasoning**: {reasoning}
+
+## Call Trace
+
+This trace exhibits the exact path the execution took to reach the crash site:
+```text
+{call_trace}
+```
+
+## Original Source Code (Context)
+
+This is the source code of the target function and its surrounding context:
+
+```c
+{source_code}
+```
+
+## Your Task
+
+Your task, based on the reasoning, is to provide a `suggested_code_diff` that modifies the ORIGINAL SOURCE CODE to prevent this violation from occurring.
+Make sure the diff applies cleanly to the original source. You do not need to rewrite the entire file, just provide the changed lines in a recognizable diff format.

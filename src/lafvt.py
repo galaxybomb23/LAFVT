@@ -2,11 +2,13 @@
 """
 LAFVT — Lightweight Automated Function Verification Toolchain
 =============================================================
-Orchestrates four stages:
+Orchestrates six stages:
   1. Analyzer   — scan C/C++ source, rank functions by risk
   2. Proofer    — run AutoUP formal verification (j parallel workers)
   3. Review     — aggregate proof results via AutoUP review mode
   4. Report     — render an interactive HTML report
+  5. Metrics    — compute cost and token metrics
+  6. Server     — launch interactive report server with fix generation
 
 Usage
 -----
@@ -19,8 +21,10 @@ import argparse
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
+import webbrowser
 from pathlib import Path
 
 import dotenv
@@ -177,6 +181,13 @@ def _build_parser() -> argparse.ArgumentParser:
             "Skip the AutoUP review stage (Stage 3) and proceed directly to Report. "
             "Use when violation_assessments.json already exists in the output directory."
         ),
+    )
+    parser.add_argument(
+        "--skip-metrics",
+        dest="skip_metrics",
+        action="store_true",
+        default=False,
+        help="Skip the metrics calculation stage (Stage 5).",
     )
     return parser
 
@@ -396,7 +407,11 @@ def main() -> int:
     assessment_json = output_dir / "violation_assessments.json"
     report_html = output_dir / "final_report.html"
 
-    report = ViolationAssessmentReport(assessment_json, report_html)
+    report = ViolationAssessmentReport(
+        assessment_json, report_html,
+        project_dir=str(project_dir),
+        model=args.llm_model
+    )
     generated_path = report.generate()
     report_elapsed = time.perf_counter() - t0
     timings["report"] = {"total_time_s": report_elapsed}
@@ -439,22 +454,26 @@ def main() -> int:
     _stage_banner(log, 5, "Metrics Calculator")
     t0 = time.perf_counter()
 
-    try:
-        calculator = MetricsCalculator(
-            output_dir=output_dir,
-            llm_model=args.llm_model,
-            source_dir=target_dir,
-        )
-        metrics_summary = calculator.calculate(codebase_name=project_dir.name)
-        metrics_path = calculator.write_summary(
-            output_dir / "LAFVT_metrics.json", metrics_summary
-        )
-        calculator.log_summary(metrics_summary)
-        timings["metrics"] = {"total_time_s": time.perf_counter() - t0}
-        log.info("Stage 5 complete in %.2fs → %s", timings["metrics"]["total_time_s"], metrics_path)
-    except Exception as exc:
-        log.warning("Metrics calculation failed (non-fatal): %s", exc)
-        timings["metrics"] = {"total_time_s": 0.0, "error": str(exc)}
+    if args.skip_metrics:
+        log.info("--skip-metrics set: skipping metrics calculation.")
+        timings["metrics"] = {"total_time_s": 0.0, "skipped": True}
+    else:
+        try:
+            calculator = MetricsCalculator(
+                output_dir=output_dir,
+                llm_model=args.llm_model,
+                source_dir=target_dir,
+            )
+            metrics_summary = calculator.calculate(codebase_name=project_dir.name)
+            metrics_path = calculator.write_summary(
+                output_dir / "LAFVT_metrics.json", metrics_summary
+            )
+            calculator.log_summary(metrics_summary)
+            timings["metrics"] = {"total_time_s": time.perf_counter() - t0}
+            log.info("Stage 5 complete in %.2fs → %s", timings["metrics"]["total_time_s"], metrics_path)
+        except Exception as exc:
+            log.warning("Metrics calculation failed (non-fatal): %s", exc)
+            timings["metrics"] = {"total_time_s": 0.0, "error": str(exc)}
 
     if args.demo:
         _demo_pause(log, 5, "Metrics Calculator", [
@@ -463,6 +482,35 @@ def main() -> int:
         ])
 
     log.info("LAFVT complete.  Report → %s", generated_path)
+
+    # ── Stage 6: Interactive Report Server ─────────────────────────────────
+    _stage_banner(log, 6, "Interactive Report Server")
+    log.info("Launching local server for interactive fix generation...")
+
+    server_cmd = [
+        sys.executable, str(_REPO_ROOT / "src" / "server.py"),
+        "--output_dir", str(output_dir),
+        "--project_dir", str(project_dir),
+        "--llm_model", args.llm_model,
+        "--lafvt_log", str(output_dir / "lafvt.log"),
+    ]
+
+    server_proc = subprocess.Popen(server_cmd)
+    log.info("Server started (PID %d). Opening browser...", server_proc.pid)
+
+    # Give Flask a moment to start before opening the browser
+    time.sleep(2)
+    webbrowser.open("http://127.0.0.1:5000/")
+
+    log.info("Press Ctrl+C or use the Stop Server button in the report to shut down.")
+    try:
+        server_proc.wait()
+    except KeyboardInterrupt:
+        log.info("Keyboard interrupt — stopping server.")
+        server_proc.terminate()
+        server_proc.wait(timeout=5)
+
+    log.info("Server stopped.")
 
     return 0
 

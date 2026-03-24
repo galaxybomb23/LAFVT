@@ -9,6 +9,7 @@ python assessment_report_generator.py --assessment /path/to/violation_assessment
 
 from __future__ import annotations
 
+import base64
 import html
 import json
 import argparse
@@ -19,9 +20,11 @@ from typing import Any, Dict, List, Optional
 class ViolationAssessmentReport:
     """Render violation assessment JSON into a readable HTML report."""
 
-    def __init__(self, json_path: str | Path, output_path: str | Path) -> None:
+    def __init__(self, json_path: str | Path, output_path: str | Path, project_dir: str = "", model: str = "") -> None:
         self.json_path = Path(json_path)
         self.output_path = Path(output_path)
+        self.project_dir = project_dir
+        self.model = model
         self.data: Dict[str, Any] = {}
 
     def load(self) -> None:
@@ -66,9 +69,14 @@ class ViolationAssessmentReport:
             grouped.setdefault(score_key, []).append(item)
 
         total = correct + incorrect
+        
+        js_project_dir = str(self.project_dir).replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+        js_model = str(self.model).replace("'", "\\'").replace('"', '\\"')
+        
         parts: List[str] = []
         parts.append("<!doctype html>")
         parts.append("<html><head><meta charset='utf-8'>")
+        parts.append(f"<script>window.LAFVT_PROJECT_DIR = '{js_project_dir}'; window.LAFVT_MODEL = '{js_model}';</script>")
         parts.append("<title>Violation Assessment Report</title>")
         parts.append(
             "<style>"
@@ -118,6 +126,14 @@ class ViolationAssessmentReport:
             "input[type='search']{width:100%;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--panel);color:var(--ink)}"
             ".theme-toggle{position:absolute;top:18px;right:24px;background:transparent;border:1px solid var(--border);"
             "color:var(--ink);padding:6px 10px;border-radius:999px;cursor:pointer}"
+            ".btn-primary{background:var(--accent);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;transition:opacity 0.2s}"
+            ".btn-primary:hover{opacity:0.9}"
+            ".btn-primary:disabled{opacity:0.5;cursor:not-allowed}"
+            ".fix-box{margin-top:12px;padding:12px;border:1px solid var(--accent);border-radius:8px;background:var(--bg);display:none}"
+            ".fix-box.visible{display:block}"
+            ".btn-stop{position:absolute;top:18px;right:140px;background:#dc2626;color:#fff;border:none;"
+            "padding:6px 12px;border-radius:999px;cursor:pointer;font-size:13px;font-weight:600;transition:opacity 0.2s}"
+            ".btn-stop:hover{opacity:0.85}"
             "@media (max-width:600px){header{padding:20px 16px} .section{padding:8px 16px} .grid{padding:12px 16px}}"
             "</style>"
         )
@@ -129,6 +145,7 @@ class ViolationAssessmentReport:
         if codebase_name:
             parts.append(f"<h2>Codebase: {html.escape(codebase_name)}</h2>")
         parts.append("<button id='theme-toggle' class='theme-toggle' type='button'>Light mode</button>")
+        parts.append("<button class='btn-stop' onclick='stopServer()'>Stop Server ⏹</button>")
         parts.append("</header>")
 
         parts.append("<div class='grid'>")
@@ -313,6 +330,50 @@ class ViolationAssessmentReport:
             "});"
             "pie.addEventListener('mouseleave',()=>{tip.style.opacity=0;});"
             "}"
+            "async function generateFix(btn) {"
+            "  const funcName = new TextDecoder().decode(Uint8Array.from(atob(btn.dataset.func), c => c.charCodeAt(0)));"
+            "  const precon = new TextDecoder().decode(Uint8Array.from(atob(btn.dataset.precon), c => c.charCodeAt(0)));"
+            "  btn.disabled = true;"
+            "  btn.textContent = 'Generating...';"
+            "  const fixBox = btn.parentElement.querySelector('.fix-box');"
+            "  const contentBox = fixBox.querySelector('.fix-content');"
+            "  fixBox.classList.add('visible');"
+            "  contentBox.innerHTML = '<em>Asking LLM to generate fix... this may take a few seconds.</em>';"
+            "  try {"
+            "    const res = await fetch('/api/suggest_fix', {"
+            "      method: 'POST',"
+            "      headers: { 'Content-Type': 'application/json' },"
+            "      body: JSON.stringify({ target_func: funcName, target_precon: precon, project_dir: window.LAFVT_PROJECT_DIR, model: window.LAFVT_MODEL })"
+            "    });"
+            "    const data = await res.json();"
+            "    if (!res.ok) throw new Error(data.error || 'Server error');"
+            "    let html = '<strong>Fixable:</strong> ' + data.result.is_fixable + '<br><br>';"
+            "    html += '<strong>Explanation:</strong><p>' + data.result.explanation + '</p>';"
+            "    if (data.result.suggested_code_diff) {"
+            "      html += '<strong>Suggested Diff:</strong><pre>' + data.result.suggested_code_diff + '</pre>';"
+            "    }"
+            "    if (data.result.extra_changes_required) {"
+            "      html += '<strong>Extra Changes Required:</strong><p>' + data.result.extra_changes_required + '</p>';"
+            "    }"
+            "    contentBox.innerHTML = html;"
+            "  } catch (err) {"
+            "    contentBox.innerHTML = '<span style=\"color:var(--warn)\"><strong>Error:</strong> ' + err.message + '</span>';"
+            "  } finally {"
+            "    btn.disabled = false;"
+            "    btn.textContent = 'Regenerate Fix';"
+            "  }"
+            "}"
+            "async function stopServer() {"
+            "  if (!confirm('Stop the server? You will need to restart it to use the report again.')) return;"
+            "  try {"
+            "    await fetch('/api/shutdown', { method: 'POST' });"
+            "    document.body.innerHTML = '<div style=\"display:flex;align-items:center;justify-content:center;height:100vh;font-family:Georgia,serif;color:var(--ink)\">' +"
+            "      '<div style=\"text-align:center\"><h1>Server Stopped</h1><p>You can close this tab.</p></div></div>';"
+            "  } catch (err) {"
+            "    document.body.innerHTML = '<div style=\"display:flex;align-items:center;justify-content:center;height:100vh;font-family:Georgia,serif\">' +"
+            "      '<div style=\"text-align:center\"><h1>Server Stopped</h1><p>You can close this tab.</p></div></div>';"
+            "  }"
+            "}"
             "</script>"
         )
         parts.append("</body></html>")
@@ -355,6 +416,18 @@ class ViolationAssessmentReport:
         parts.append(self._render_violation_assessment(assessment))
         parts.append(self._render_llm_review(llm))
         parts.append("</div>")
+        # Inject Generate Fix button and output container
+        precondition = item.get("Precondition", "")
+        
+        # Use base64 encoding in data-attributes to avoid HTML entity escaping issues
+        b64_target = base64.b64encode(item.get("Target Function", "").encode("utf-8")).decode("ascii")
+        b64_precon = base64.b64encode(precondition.encode("utf-8")).decode("ascii")
+        
+        parts.append("<div style='margin-top: 16px'>")
+        parts.append(f"<button class='btn-primary' data-func='{b64_target}' data-precon='{b64_precon}' onclick='generateFix(this)'>Generate Code Fix ✨</button>")
+        parts.append(f"<div class='fix-box'><div class='meta'>AI Fix Suggestion</div><div class='fix-content'></div></div>")
+        parts.append("</div>")
+
         parts.append("</details>")
         return "\n".join(parts)
 
@@ -493,6 +566,8 @@ def main() -> None:
     parser.add_argument("--assessment", required=True, help="Path to violation_assessment.json")
     parser.add_argument("--report_name", default="output.html", help="Output HTML filename")
     parser.add_argument("--output_dir", help="Optional output directory for the HTML report")
+    parser.add_argument("--project_dir", default="", help="Root directory of the project")
+    parser.add_argument("--model", default="gpt-5.2", help="LLM model to use (default: gpt-5.2)")
     args = parser.parse_args()
 
     assessment_dir = Path(args.assessment)
@@ -504,7 +579,7 @@ def main() -> None:
         output_path = Path(args.output_dir) / report_name
     else:
         output_path = Path(report_name)
-    var = ViolationAssessmentReport(assessment_dir, output_path)
+    var = ViolationAssessmentReport(assessment_dir, output_path, project_dir=args.project_dir, model=args.model)
     out_path = var.generate()
     print("Generated! ", out_path)
 
