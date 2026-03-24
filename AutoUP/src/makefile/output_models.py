@@ -103,6 +103,8 @@ class ValidationAssessmentResponse(BaseModel):
     ease_of_exploitation: str
     impact: str
     threat_score: int
+    threat_vector: Optional[str] = None
+    threat_score: Optional[int] = None
 
     def to_dict(self):
         return {
@@ -113,5 +115,6 @@ class ValidationAssessmentResponse(BaseModel):
             "vuln_context": self.vuln_context,
             "ease_of_exploitation": self.ease_of_exploitation,
             "vuln_impact": self.impact,
+            "threat_vector": self.threat_vector,
             "threat_score": self.threat_score
         }

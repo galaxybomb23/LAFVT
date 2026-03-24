@@ -8,3 +8,4 @@ filelock
 tiktoken==0.12.0
 litellm==1.80.7
 libclang==18.1.1
+cvss==3.6

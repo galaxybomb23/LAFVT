@@ -5,11 +5,21 @@ from agent import AIAgent
 from pathlib import Path
 from commons.models import Generable
 from makefile.output_models import ValidationAssessmentResponse
+from cvss import CVSS4
 
 from commons.utils import Status
 
 logger = logging.getLogger(__name__)
 
+def score_cvss4(vector: str) -> dict:
+    try:
+        c = CVSS4(vector)
+        score_tuple = c.scores()
+        score = score_tuple[0] if score_tuple else 0.0
+    except Exception as e:
+        logger.error("Invalid CVSS vector '%s': %s", vector, e)
+        score = 0.0
+    return score
 
 class ViolationReviewer(AIAgent, Generable):
     def __init__(self, args, project_container):
@@ -22,7 +32,7 @@ class ViolationReviewer(AIAgent, Generable):
         self.violations_reviewed = 0
         self.violated_buggy_agree = 0
         self.violated_buggy_disagree = 0
-        self.threat_scores = {i: 0 for i in range(1, 11)}
+        self.threat_scores = {i: 0 for i in range(0, 11)}
         self.violation_assessments = []
 
     def _extract_violations(self):
@@ -74,7 +84,7 @@ class ViolationReviewer(AIAgent, Generable):
                                         })
                 except Exception as e:
                     print(f"Error reading {path}: {e}")
-        print(f"Extracted {len(vb_conditions)} violated buggy conditions for review.")
+
         return vb_conditions
 
     def get_top_threats(self, top_n=-1):
@@ -136,11 +146,15 @@ class ViolationReviewer(AIAgent, Generable):
         result = llm_response.to_dict()
 
         self.violations_reviewed += 1
+        threat_score = -1
+
         if result["violation_is_correct"]:
             self.violated_buggy_agree += 1
+            result["threat_score"] = int(round(score_cvss4(result["threat_vector"])))
             self.threat_scores[result["threat_score"]] += 1
         else:
             self.violated_buggy_disagree += 1
+            result["threat_score"] = threat_score
 
         nice_formatted_assessment = {
             "Precondition": validation_result["precondition"],
@@ -161,6 +175,7 @@ class ViolationReviewer(AIAgent, Generable):
                     "Vulnerability Impact": result["vuln_impact"],
                     "Ease of Exploitation": result["ease_of_exploitation"],
                 },
+                "Threat Vector": result["threat_vector"],
                 "Threat Score": result["threat_score"],
             },
         }
@@ -176,9 +191,8 @@ class ViolationReviewer(AIAgent, Generable):
             "Sorted Assessments": self.get_top_threats(),
         }
 
-        with open(self.harness_dir + "/violation_assessments.json", "w") as f:
+        with open("./violation_assessments.json", "w") as f:
             json.dump(output_format, f, indent=4)
-        print(f"Violation assessments dumped to {self.harness_dir}/violation_assessments.json")
 
     def generate(self) -> bool:
         # This method is kept for compatibility but validate should be used instead
