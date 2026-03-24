@@ -84,7 +84,7 @@ class ViolationReviewer(AIAgent, Generable):
                                         })
                 except Exception as e:
                     print(f"Error reading {path}: {e}")
-
+        print(f"Extracted {len(vb_conditions)} violated buggy conditions for review.")
         return vb_conditions
 
     def get_top_threats(self, top_n=-1):
@@ -191,8 +191,9 @@ class ViolationReviewer(AIAgent, Generable):
             "Sorted Assessments": self.get_top_threats(),
         }
 
-        with open("./violation_assessments.json", "w") as f:
+        with open(self.harness_dir + "/violation_assessments.json", "w") as f:
             json.dump(output_format, f, indent=4)
+        print(f"Violation assessments dumped to {self.harness_dir}/violation_assessments.json")
 
     def generate(self) -> bool:
         # This method is kept for compatibility but validate should be used instead
