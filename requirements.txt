@@ -30,4 +30,6 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 urllib3==2.5.0
 litellm==1.80.7
-flask
+PyDriller==2.9
+scikit-learn==1.8.0
+flask==3.1.3

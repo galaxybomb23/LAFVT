@@ -16,3 +16,4 @@ output/
 # Repo Specific
 lafvt_output/
 .function_cache
+CVEfixes.db 

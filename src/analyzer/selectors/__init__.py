@@ -11,3 +11,4 @@ To add a new selector:
 """
 
 from . import standard  # noqa: F401
+from . import post  # noqa: F401

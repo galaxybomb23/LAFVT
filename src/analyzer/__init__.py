@@ -29,23 +29,31 @@ Quick-start
 from analyzer._analyzer import Analyzer
 from analyzer.base import (
     AnalysisAlgorithm,
+    PostSelectorAlgorithm,
     SelectorAlgorithm,
     get_algorithm,
+    get_post_selector,
     get_selector,
     list_algorithms,
+    list_post_selectors,
     list_selectors,
     register_algorithm,
+    register_post_selector,
     register_selector,
 )
 
 __all__ = [
     "Analyzer",
     "AnalysisAlgorithm",
+    "PostSelectorAlgorithm",
     "SelectorAlgorithm",
     "register_algorithm",
+    "register_post_selector",
     "register_selector",
     "get_algorithm",
+    "get_post_selector",
     "get_selector",
     "list_algorithms",
+    "list_post_selectors",
     "list_selectors",
 ]

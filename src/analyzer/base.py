@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 _ALGORITHM_REGISTRY: Dict[str, Type["AnalysisAlgorithm"]] = {}
 _SELECTOR_REGISTRY: Dict[str, Type["SelectorAlgorithm"]] = {}
+_POST_SELECTOR_REGISTRY: Dict[str, Type["PostSelectorAlgorithm"]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +61,17 @@ def register_selector(cls: Type["SelectorAlgorithm"]) -> Type["SelectorAlgorithm
     return cls
 
 
+def register_post_selector(cls: Type["PostSelectorAlgorithm"]) -> Type["PostSelectorAlgorithm"]:
+    """Decorator that registers a :class:`PostSelectorAlgorithm` by its ``name``."""
+    if not hasattr(cls, "name") or not cls.name:
+        raise AttributeError(f"{cls.__qualname__} must define a non-empty class attribute 'name'")
+    if cls.name in _POST_SELECTOR_REGISTRY:
+        logger.warning("Post-selector '%s' is already registered — overwriting.", cls.name)
+    _POST_SELECTOR_REGISTRY[cls.name] = cls
+    logger.debug("Registered post-selector: '%s' → %s", cls.name, cls.__qualname__)
+    return cls
+
+
 # ---------------------------------------------------------------------------
 # Public registry access helpers
 # ---------------------------------------------------------------------------
@@ -80,6 +92,14 @@ def get_selector(name: str) -> "SelectorAlgorithm":
     return _SELECTOR_REGISTRY[name]()
 
 
+def get_post_selector(name: str) -> "PostSelectorAlgorithm":
+    """Instantiate a registered :class:`PostSelectorAlgorithm` by name."""
+    if name not in _POST_SELECTOR_REGISTRY:
+        available = list(_POST_SELECTOR_REGISTRY.keys())
+        raise ValueError(f"Unknown post-selector '{name}'. Available: {available}")
+    return _POST_SELECTOR_REGISTRY[name]()
+
+
 def list_algorithms() -> List[str]:
     """Return the names of all registered analysis algorithms."""
     return list(_ALGORITHM_REGISTRY.keys())
@@ -88,6 +108,11 @@ def list_algorithms() -> List[str]:
 def list_selectors() -> List[str]:
     """Return the names of all registered selectors."""
     return list(_SELECTOR_REGISTRY.keys())
+
+
+def list_post_selectors() -> List[str]:
+    """Return the names of all registered post-selectors."""
+    return list(_POST_SELECTOR_REGISTRY.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +222,64 @@ class SelectorAlgorithm(ABC):
     # Shared helper – subclasses may call this to keep their select()
     # implementations concise.
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _to_output_df(subset: pd.DataFrame) -> pd.DataFrame:
+        """Return a copy that carries *only* ``filepath`` and ``function_name``."""
+        return subset[["filepath", "function_name"]].reset_index(drop=True).copy()
+
+
+class PostSelectorAlgorithm(ABC):
+    """
+    Contract for post-selectors that expand an initial selection.
+
+    A post-selector runs *after* a normal :class:`SelectorAlgorithm` and
+    transforms the selected set — typically by tracing call-graph
+    relationships to discover additional functions of interest.
+
+    Subclasses must:
+    * Set ``name`` (class attribute, unique lowercase string).
+    * Implement :meth:`post_select`.
+    """
+
+    name: str = ""
+
+    REQUIRED_COLUMNS: tuple = ("filepath", "function_name")
+
+    @abstractmethod
+    def post_select(
+        self,
+        selected_df: pd.DataFrame,
+        analysis_df: pd.DataFrame,
+        source_root: Path,
+    ) -> pd.DataFrame:
+        """
+        Expand or refine *selected_df* using knowledge from the full
+        *analysis_df* and access to source files under *source_root*.
+
+        Parameters
+        ----------
+        selected_df:
+            Output of the initial selector (``filepath``, ``function_name``).
+        analysis_df:
+            Full analysis DataFrame with all discovered functions and scores.
+        source_root:
+            Absolute path to the source tree that was analysed.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns ``filepath`` and ``function_name`` at minimum.
+        """
+
+    def _validate_output(self, df: pd.DataFrame) -> pd.DataFrame:
+        missing = [c for c in self.REQUIRED_COLUMNS if c not in df.columns]
+        if missing:
+            raise ValueError(
+                f"Post-selector '{self.name}' returned a DataFrame missing "
+                f"required columns: {missing}"
+            )
+        return df
 
     @staticmethod
     def _to_output_df(subset: pd.DataFrame) -> pd.DataFrame:
