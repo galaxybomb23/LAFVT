@@ -516,6 +516,11 @@ class ViolationAssessmentReport:
         if threat:
             threat_text = "\n".join(f"{k}: {v}" for k, v in threat.items())
             items.append(f"<div><strong>Threat Assessment:</strong></div><pre>{html.escape(threat_text)}</pre>")
+        threat_vector = llm.get("threat_vector")
+        if threat_vector is None:
+            threat_vector = llm.get("Threat Vector")
+        if threat_vector:
+            items.append(f"<div><strong>Threat Vector:</strong> {html.escape(str(threat_vector))}</div>")
         score = llm.get("Threat Score")
         if score is not None:
             items.append(f"<div><strong>Threat Score:</strong> {html.escape(str(score))}</div>")
