@@ -516,6 +516,11 @@ class ViolationAssessmentReport:
         if threat:
             threat_text = "\n".join(f"{k}: {v}" for k, v in threat.items())
             items.append(f"<div><strong>Threat Assessment:</strong></div><pre>{html.escape(threat_text)}</pre>")
+        threat_vector = llm.get("threat_vector")
+        if threat_vector is None:
+            threat_vector = llm.get("Threat Vector")
+        if threat_vector:
+            items.append(f"<div><strong>Threat Vector:</strong> {html.escape(str(threat_vector))}</div>")
         score = llm.get("Threat Score")
         if score is not None:
             items.append(f"<div><strong>Threat Score:</strong> {html.escape(str(score))}</div>")
@@ -544,13 +549,19 @@ class ViolationAssessmentReport:
             if count <= 0:
                 continue
             angle = (count / total) * 360.0
+            color = colors[score - 1]
+            pct = (count / total) * 100.0
+            label = html.escape(f"Score: {score} — {count} ({pct:.1f}%)")
+            if count == total:
+                parts.append(
+                    f"<circle cx='{cx}' cy='{cy}' r='{r}' fill='{color}' "
+                    f"stroke='#ffffff' stroke-width='0.5' data-label='{label}'></circle>"
+                )
+                continue
             end_angle = start_angle + angle
             x1, y1 = polar(cx, cy, r, start_angle)
             x2, y2 = polar(cx, cy, r, end_angle)
             large = 1 if angle > 180 else 0
-            color = colors[score - 1]
-            pct = (count / total) * 100.0
-            label = html.escape(f"Score: {score} — {count} ({pct:.1f}%)")
             parts.append(
                 f"<path d='M {cx} {cy} L {x1:.2f} {y1:.2f} A {r} {r} 0 {large} 1 {x2:.2f} {y2:.2f} Z' "
                 f"fill='{color}' stroke='#ffffff' stroke-width='0.5' data-label='{label}'></path>"
