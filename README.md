@@ -221,7 +221,7 @@ Example codebase-level summary:
 
 ## Analyzer
 
-The Analyzer is a standalone, pluggable component that scans a C/C++ codebase, scores every function for vulnerability risk, and produces two CSV files consumed by the rest of the LAFVT pipeline. For in-depth algorithm descriptions, dataflow diagrams, output column references, and the VCCFinder SVM model details, see the [Analyzer documentation](src/analyzer/algorithms.md).
+The Analyzer is a standalone, pluggable component that scans a C/C++ codebase, scores every function for vulnerability risk, and produces two CSV files consumed by the rest of the LAFVT pipeline. For in-depth algorithm descriptions, dataflow diagrams, output column references, and the VCCFinder SVM model details, see the [Analyzer documentation](src/analyzer/readme.md).
 
 ### Quick reference
 
