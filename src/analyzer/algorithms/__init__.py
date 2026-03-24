@@ -13,3 +13,4 @@ To add a new algorithm:
 from . import lizard  # noqa: F401
 from . import loc     # noqa: F401
 from . import vccfinder  # noqa: F401
+from . import leopard  # noqa: F401

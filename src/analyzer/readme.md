@@ -146,6 +146,67 @@ flowchart LR
 
 ---
 
+### LEOPARD
+
+**Flag:** `--algorithm leopard`
+
+Implements a LEOPARD-style AST metric extractor using libclang and maps each function to a risk `score` through complexity-first binning and vulnerability ranking within each bin.
+
+#### Dataflow
+
+```mermaid
+flowchart LR
+        SRC["C/C++ Source Tree"] --> CCDB{"compile_commands.json\navailable?"}
+        CCDB -->|Yes| PARSE1["libclang Parse\nwith compile flags"]
+        CCDB -->|No| PARSE2["Best-effort libclang Parse\n(target/sysroot/std overrides)"]
+        PARSE1 --> METRICS["Extract LEOPARD Metrics\nC1..C4, V1..V11"]
+        PARSE2 --> METRICS
+        METRICS --> SCORE1["complexity_score = C1+C2+C3+C4\nvulnerability_score = V1+...+V11"]
+        SCORE1 --> BIN["Exact complexity bins\n(same score = same bin)"]
+        BIN --> NORM["Normalise vulnerability\nwithin each bin"]
+        NORM --> SCORE2["score = bin + norm_vulnerability +\n0.001*norm_complexity"]
+        SCORE2 --> OUT["leopard_analysis.csv"]
+```
+
+#### Scoring details
+
+1. **AST extraction** — Parses C/C++ files with libclang and computes LEOPARD families:
+     - Complexity: `C1..C4`
+     - Vulnerability: `V1..V11`
+2. **Family totals** — Builds `complexity_score = C1 + C2 + C3 + C4` and `vulnerability_score = V1 + ... + V11`.
+3. **Complexity binning** — Functions are grouped by exact `complexity_score` value (not quantiles).
+4. **In-bin normalisation** — `vulnerability_score` is min-max normalised within each complexity bin (`norm_vulnerability`).
+5. **Final score** — `score = bin + norm_vulnerability + 0.001 * norm_complexity`, ensuring higher-complexity bins are always prioritised while preserving vulnerability ordering inside each bin.
+
+#### Parsing behaviour
+
+- If `compile_commands.json` exists at the analysis root, LEOPARD uses it for translation-unit parsing.
+- Otherwise, LEOPARD falls back to best-effort parsing over discovered source files.
+- Optional environment overrides:
+    - `LIBCLANG_FILE` — explicit libclang shared library path
+    - `LAFVT_LEOPARD_TARGET` — target triple override
+    - `LAFVT_LEOPARD_SYSROOT` — sysroot override
+    - `LAFVT_LEOPARD_STD` — C standard (default `c11`)
+
+#### Output columns
+
+| Column | Description |
+|---|---|
+| `filepath` | Absolute POSIX path to the source file |
+| `function_name` | Function name |
+| `start_line` | First line of the function |
+| `end_line` | Last line of the function |
+| `C1..C4` | Complexity metric family |
+| `V1..V11` | Vulnerability metric family |
+| `complexity_score` | `C1 + C2 + C3 + C4` |
+| `vulnerability_score` | `V1 + ... + V11` |
+| `bin` | Exact complexity bin id |
+| `norm_vulnerability` | Bin-normalised vulnerability score |
+| `norm_complexity` | Global min-max normalised complexity score |
+| `score` | Final LEOPARD ranking score |
+
+---
+
 ### VCCFinder
 
 **Flag:** `--algorithm vccfinder`

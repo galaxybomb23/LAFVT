@@ -96,7 +96,7 @@ python src/server.py \
 | Argument | Required | Default | Description |
 |---|---|---|---|
 | `--project_dir` | Yes | — | Root directory of the C/C++ project to verify |
-| `--algorithm` | No | `lizard` | Static analysis algorithm (`lizard`, `loc`, `vccfinder`) |
+| `--algorithm` | No | `lizard` | Static analysis algorithm (`lizard`, `loc`, `vccfinder`, `leopard`) |
 | `--selector` | No | `top_N` | Function selection strategy (`top_N`, `top_risk`, etc.) |
 | `--post-selector` | No | — | Optional post-selector for call-graph expansion (`root_func_file`, `root_func_codebase`) |
 | `--llm_model` | No | `gpt-5.2` | LLM model forwarded to AutoUP agents |
@@ -229,6 +229,7 @@ The Analyzer is a standalone, pluggable component that scans a C/C++ codebase, s
 |---|---|---|
 | Lizard | `--algorithm lizard` | Cyclomatic complexity, nesting, params, line count — normalised within quantile bins |
 | LOC | `--algorithm loc` | Raw line count normalised to [0, 1] |
+| LEOPARD | `--algorithm leopard` | libclang AST metrics (C1..C4, V1..V11) with complexity-bin prioritisation and in-bin vulnerability ranking |
 | VCCFinder | `--algorithm vccfinder` | Git-history mining + LinearSVC classification (offline, no GPU) |
 
 | Selector | Flag | Summary |
