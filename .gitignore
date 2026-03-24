@@ -17,3 +17,4 @@ output/
 lafvt_output/
 .function_cache
 CVEfixes.db 
+node_modules/
