@@ -73,7 +73,7 @@ class Analyzer:
         project_root: Path = Path("."),
         algorithm: str = "lizard",
         selector: str = "top_risk",
-        post_selector: Optional[str] = None,
+        post_selector: Optional[str] = "root_func_file",
     ) -> None:
         self.project_root = Path(project_root)
         self._algorithm = get_algorithm(algorithm)

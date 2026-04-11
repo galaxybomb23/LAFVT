@@ -45,6 +45,7 @@ _AUTOUP_ROOT = _REPO_ROOT / "AutoUP"
 
 _DEFAULT_ALGORITHM = "lizard"
 _DEFAULT_SELECTOR = "top_N"
+_DEFAULT_TOP_N = 10
 _DEFAULT_LLM_MODEL = "gpt-5.2"
 _DEFAULT_J = max(1, os.cpu_count() - 2) if os.cpu_count() else 1
 
@@ -128,6 +129,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--selector",
         default=_DEFAULT_SELECTOR,
         help="Function selection strategy (e.g. 'top_N', 'top_risk').",
+    )
+    parser.add_argument(
+        "--selector_n",
+        default=_DEFAULT_TOP_N,
+        metavar="N",
+        help="Number to be used with --selector (used when selector is 'top_N' or 'bottom_N').",
     )
     parser.add_argument(
         "--llm_model",
@@ -268,6 +275,7 @@ def main() -> int:
         project_root=output_dir,
         algorithm=args.algorithm,
         selector=args.selector,
+        post_selector="root_func_codebase"
     )
     analyzer.analyze(target_dir, output_dir=output_dir)
     analysis_df = analyzer.get_analysis_dataframe()
@@ -281,7 +289,7 @@ def main() -> int:
 
     # Stage 1b: Select — write directly to analysis_manifest.csv
     manifest_path = output_dir / "analysis_manifest.csv"
-    selected_funcs = analyzer.select(N=10, output_path=manifest_path)
+    selected_funcs = analyzer.select(N=args.selector_n, output_path=manifest_path)
     if not selected_funcs:
         log.error("Selector returned no functions. Exiting.")
         return 0

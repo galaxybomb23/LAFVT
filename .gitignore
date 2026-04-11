@@ -13,6 +13,7 @@ env/
 RIOT/
 output/
 Juliet/
+linux/
 
 # Repo Specific
 lafvt_output/
