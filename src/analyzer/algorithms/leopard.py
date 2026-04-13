@@ -42,33 +42,8 @@ from analyzer.base import AnalysisAlgorithm, register_algorithm
 logger = logging.getLogger(__name__)
 
 _C_EXTENSIONS: Set[str] = {".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hxx"}
-_DEFAULT_THREAD_POOL_SIZE = 20
-
-
-def _resolve_thread_pool_size() -> int:
-    raw_value = os.environ.get("LAFVT_LEOPARD_THREADS")
-    if raw_value is None:
-        return _DEFAULT_THREAD_POOL_SIZE
-
-    try:
-        workers = int(raw_value)
-    except ValueError:
-        logger.warning(
-            "[leopard] Invalid LAFVT_LEOPARD_THREADS=%r; using default=%d",
-            raw_value,
-            _DEFAULT_THREAD_POOL_SIZE,
-        )
-        return _DEFAULT_THREAD_POOL_SIZE
-
-    if workers <= 0:
-        logger.warning(
-            "[leopard] Non-positive LAFVT_LEOPARD_THREADS=%d; using default=%d",
-            workers,
-            _DEFAULT_THREAD_POOL_SIZE,
-        )
-        return _DEFAULT_THREAD_POOL_SIZE
-
-    return workers
+_CPU_COUNT = os.cpu_count()
+_DEFAULT_THREAD_POOL_SIZE = max(1, _CPU_COUNT - 2) if _CPU_COUNT else 1
 
 
 @dataclass
@@ -516,7 +491,7 @@ class LeopardAlgorithm(AnalysisAlgorithm):
     def __init__(self) -> None:
         _configure_libclang()
         self._index = cindex.Index.create()
-        self._max_workers = _resolve_thread_pool_size()
+        self._max_workers = _DEFAULT_THREAD_POOL_SIZE
 
     def analyze(self, root_directory: Path) -> pd.DataFrame:
         root_directory = Path(root_directory).resolve()
