@@ -28,6 +28,7 @@ import os
 import shlex
 import sys
 from collections import defaultdict
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, DefaultDict, Dict, Iterable, List, Optional, Set, Tuple
@@ -41,6 +42,10 @@ from analyzer.base import AnalysisAlgorithm, register_algorithm
 logger = logging.getLogger(__name__)
 
 _C_EXTENSIONS: Set[str] = {".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hxx"}
+_CPU_COUNT = os.cpu_count()
+_DEFAULT_THREAD_POOL_SIZE = max(1, _CPU_COUNT - 2) if _CPU_COUNT else 1
+
+
 @dataclass
 class FunctionMetrics:
     tu_path: str
@@ -419,7 +424,6 @@ def _visit_control_structure(cur: Any, state: _AnalysisState, loop_like: bool = 
         state.loop_depth -= 1
     state.control_stack.pop()
 
-# poopy
 def _analyze_function(func_cursor: Any, tu_path: str) -> FunctionMetrics:
     loc = func_cursor.location
     file_path = Path(loc.file.name).resolve() if loc.file else Path(tu_path).resolve()
@@ -487,6 +491,7 @@ class LeopardAlgorithm(AnalysisAlgorithm):
     def __init__(self) -> None:
         _configure_libclang()
         self._index = cindex.Index.create()
+        self._max_workers = _DEFAULT_THREAD_POOL_SIZE
 
     def analyze(self, root_directory: Path) -> pd.DataFrame:
         root_directory = Path(root_directory).resolve()
@@ -494,6 +499,10 @@ class LeopardAlgorithm(AnalysisAlgorithm):
             raise ValueError(f"[leopard] Not a directory: {root_directory}")
 
         logger.info("[leopard] Starting analysis of: %s", root_directory)
+        logger.info(
+            "[leopard] Using function analysis thread pool with %d workers",
+            self._max_workers,
+        )
 
         ccdb_path = root_directory / "compile_commands.json"
         if ccdb_path.is_file():
@@ -537,34 +546,47 @@ class LeopardAlgorithm(AnalysisAlgorithm):
 
         seen_funcs: Set[Tuple[str, int, str]] = set()
         all_metrics: List[FunctionMetrics] = []
+        # Keep TUs alive until all queued function futures finish; cursors
+        # submitted to workers refer back to their parent translation unit.
+        translation_units: List[Any] = []
+        futures: List[Future[FunctionMetrics]] = []
 
-        for entry in ccdb:
-            src = self._resolve_ccdb_source(entry, root_directory)
-            if src is None or not src.is_file():
-                continue
-            if src.suffix.lower() not in _C_EXTENSIONS:
-                continue
+        with ThreadPoolExecutor(
+            max_workers=self._max_workers,
+            thread_name_prefix="leopard-fn",
+        ) as executor:
+            for entry in ccdb:
+                src = self._resolve_ccdb_source(entry, root_directory)
+                if src is None or not src.is_file():
+                    continue
+                if src.suffix.lower() not in _C_EXTENSIONS:
+                    continue
 
-            raw_args = self._extract_raw_args(entry)
-            args_for_tu = _clean_args(raw_args)
+                raw_args = self._extract_raw_args(entry)
+                args_for_tu = _clean_args(raw_args)
 
-            inferred_target = _infer_target_from_args(raw_args)
-            target = target_override or inferred_target
-            if target:
-                args_for_tu += ["-target", target]
-            if sysroot_override:
-                args_for_tu += ["--sysroot", sysroot_override]
+                inferred_target = _infer_target_from_args(raw_args)
+                target = target_override or inferred_target
+                if target:
+                    args_for_tu += ["-target", target]
+                if sysroot_override:
+                    args_for_tu += ["--sysroot", sysroot_override]
 
-            tu = self._safe_parse(src, args_for_tu)
-            if tu is None:
-                continue
+                tu = self._safe_parse(src, args_for_tu)
+                if tu is None:
+                    continue
 
-            self._collect_metrics_from_tu(
-                tu=tu,
-                tu_path=src.as_posix(),
-                seen_funcs=seen_funcs,
-                all_metrics=all_metrics,
-            )
+                translation_units.append(tu)
+                futures.extend(
+                    self._submit_functions_from_tu(
+                        executor=executor,
+                        tu=tu,
+                        tu_path=src.as_posix(),
+                        seen_funcs=seen_funcs,
+                    )
+                )
+
+            all_metrics.extend(self._collect_completed_metrics(futures))
 
         return all_metrics
 
@@ -581,25 +603,38 @@ class LeopardAlgorithm(AnalysisAlgorithm):
 
         seen_funcs: Set[Tuple[str, int, str]] = set()
         all_metrics: List[FunctionMetrics] = []
+        # Keep TUs alive until all queued function futures finish; cursors
+        # submitted to workers refer back to their parent translation unit.
+        translation_units: List[Any] = []
+        futures: List[Future[FunctionMetrics]] = []
 
-        for src in source_files:
-            args_for_tu = _build_args_for_tu(
-                src=src,
-                project_root=root_directory,
-                target=target_override,
-                sysroot=sysroot_override,
-                std=std_override,
-            )
-            tu = self._safe_parse(src, args_for_tu)
-            if tu is None:
-                continue
+        with ThreadPoolExecutor(
+            max_workers=self._max_workers,
+            thread_name_prefix="leopard-fn",
+        ) as executor:
+            for src in source_files:
+                args_for_tu = _build_args_for_tu(
+                    src=src,
+                    project_root=root_directory,
+                    target=target_override,
+                    sysroot=sysroot_override,
+                    std=std_override,
+                )
+                tu = self._safe_parse(src, args_for_tu)
+                if tu is None:
+                    continue
 
-            self._collect_metrics_from_tu(
-                tu=tu,
-                tu_path=src.as_posix(),
-                seen_funcs=seen_funcs,
-                all_metrics=all_metrics,
-            )
+                translation_units.append(tu)
+                futures.extend(
+                    self._submit_functions_from_tu(
+                        executor=executor,
+                        tu=tu,
+                        tu_path=src.as_posix(),
+                        seen_funcs=seen_funcs,
+                    )
+                )
+
+            all_metrics.extend(self._collect_completed_metrics(futures))
 
         return all_metrics
 
@@ -636,13 +671,15 @@ class LeopardAlgorithm(AnalysisAlgorithm):
         return []
 
     @staticmethod
-    def _collect_metrics_from_tu(
+    def _submit_functions_from_tu(
         *,
+        executor: ThreadPoolExecutor,
         tu: Any,
         tu_path: str,
         seen_funcs: Set[Tuple[str, int, str]],
-        all_metrics: List[FunctionMetrics],
-    ) -> None:
+    ) -> List[Future[FunctionMetrics]]:
+        futures: List[Future[FunctionMetrics]] = []
+
         for cur in tu.cursor.walk_preorder():
             if cur.kind != CursorKind.FUNCTION_DECL or not cur.is_definition():
                 continue
@@ -662,7 +699,23 @@ class LeopardAlgorithm(AnalysisAlgorithm):
                 continue
             seen_funcs.add(key)
 
-            all_metrics.append(_analyze_function(cur, tu_path=tu_path))
+            futures.append(executor.submit(_analyze_function, cur, tu_path))
+
+        return futures
+
+    @staticmethod
+    def _collect_completed_metrics(
+        futures: Iterable[Future[FunctionMetrics]],
+    ) -> List[FunctionMetrics]:
+        metrics: List[FunctionMetrics] = []
+
+        for future in as_completed(futures):
+            try:
+                metrics.append(future.result())
+            except Exception:
+                logger.exception("[leopard] Unexpected function analysis error")
+
+        return metrics
 
     @staticmethod
     def _to_row(fm: FunctionMetrics) -> Dict[str, Any]:
@@ -689,7 +742,6 @@ class LeopardAlgorithm(AnalysisAlgorithm):
             "complexity_score": float(fm.complexity_score()),
             "vulnerability_score": float(fm.vulnerability_score()),
         }
-    # poopy
     @staticmethod
     def _apply_binned_scoring(df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
