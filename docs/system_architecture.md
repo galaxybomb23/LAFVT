@@ -237,9 +237,9 @@ flowchart LR
         RFC["root_func_codebase"]
     end
 
-    Algo -->|@register_algorithm| AREG
-    Sel -->|@register_selector| SREG
-    Post -->|@register_post_selector| PREG
+    Algo -->|@register_algorithm\| AREG
+    Sel -->|@register_selector\| SREG
+    Post -->|@register_post_selector\| PREG
 ```
 
 ---
