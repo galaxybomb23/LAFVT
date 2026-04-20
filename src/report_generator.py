@@ -77,7 +77,7 @@ class ViolationAssessmentReport:
         parts.append("<!doctype html>")
         parts.append("<html><head><meta charset='utf-8'>")
         parts.append(f"<script>window.LAFVT_PROJECT_DIR = '{js_project_dir}'; window.LAFVT_MODEL = '{js_model}';</script>")
-        parts.append("<title>Violation Assessment Report</title>")
+        parts.append("<title>Interactive Vulnerability Report</title>")
         parts.append(
             "<style>"
             ":root{--bg:#121212;--ink:#e5e5e5;--muted:#a1a1aa;--card:#1c1c1c;"
@@ -140,7 +140,7 @@ class ViolationAssessmentReport:
         parts.append("</head><body>")
 
         parts.append("<header>")
-        parts.append("<h1>Violation Assessment Report</h1>")
+        parts.append("<h1>Interactive Vulnerability Report</h1>")
         parts.append("<div class='sub'>Interactive summary and per-violation assessments</div>")
         if codebase_name:
             parts.append(f"<h2>Codebase: {html.escape(codebase_name)}</h2>")
@@ -347,7 +347,7 @@ class ViolationAssessmentReport:
             "    });"
             "    const data = await res.json();"
             "    if (!res.ok) throw new Error(data.error || 'Server error');"
-            "    let html = '<strong>Fixable:</strong> ' + data.result.is_fixable + '<br><br>';"
+            "    let html = '<strong>Locally Fixable:</strong> ' + data.result.is_fixable + '<br><br>';"
             "    html += '<strong>Explanation:</strong><p>' + data.result.explanation + '</p>';"
             "    if (data.result.suggested_code_diff) {"
             "      html += '<strong>Suggested Diff:</strong><pre>' + data.result.suggested_code_diff + '</pre>';"
